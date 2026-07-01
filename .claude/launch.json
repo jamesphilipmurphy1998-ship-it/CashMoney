@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "portfolio-tracker",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "4178", "--directory", "/Users/jamesphilipmurphy/Documents/portfolio-tracker"],
+      "port": 4178
+    }
+  ]
+}

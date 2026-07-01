@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Portfolio tracker</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="login" id="login-screen" hidden>
+    <div class="login-card">
+      <span class="brand-mark big">◈</span>
+      <h1>Portfolio tracker</h1>
+      <p class="login-sub">Sign in to track your holdings and research.</p>
+      <button class="btn google-btn" id="google-btn">
+        <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.92c1.7-1.57 2.68-3.88 2.68-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.92-2.26c-.8.54-1.84.86-3.04.86-2.34 0-4.32-1.58-5.03-3.7H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.97 10.72A5.4 5.4 0 0 1 3.68 9c0-.6.1-1.18.29-1.72V4.95H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.05l3.01-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58C13.47.9 11.43 0 9 0A9 9 0 0 0 .96 4.95l3.01 2.33C4.68 5.16 6.66 3.58 9 3.58z"/></svg>
+        Continue with Google
+      </button>
+      <p class="login-err" id="login-err" hidden></p>
+    </div>
+  </div>
+
+  <main class="app" id="app" hidden>
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">◈</span>
+        <span class="brand-name">My portfolio</span>
+        <span class="live-pill" id="status-pill"><span class="dot"></span>Manual</span>
+      </div>
+      <div class="topbar-actions">
+        <span class="updated" id="updated">—</span>
+        <span class="user-chip" id="user-chip" hidden><span id="user-email"></span></span>
+        <button class="btn" id="refresh-btn" title="Recalculate">Refresh</button>
+        <button class="btn btn-dark" id="add-btn">+ Add position</button>
+        <button class="btn" id="signout-btn">Sign out</button>
+      </div>
+    </header>
+
+    <section class="metrics" id="metrics">
+      <!-- metric cards injected -->
+    </section>
+
+    <section class="block">
+      <div class="block-head">
+        <h2>Holdings</h2>
+        <span class="muted" id="holdings-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table class="holdings">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th class="num">Shares</th>
+              <th class="num">Cost</th>
+              <th class="num">Price</th>
+              <th class="num">Day</th>
+              <th class="num">Value</th>
+              <th class="num">Gain</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="holdings-body"></tbody>
+        </table>
+        <p class="empty" id="holdings-empty" hidden>No positions yet. Add your first one to get started.</p>
+      </div>
+    </section>
+
+    <div class="two-col">
+      <section class="block card">
+        <div class="block-head"><h2>Allocation</h2></div>
+        <div class="alloc-bar" id="alloc-bar"></div>
+        <div class="alloc-legend" id="alloc-legend"></div>
+      </section>
+
+      <section class="block card">
+        <div class="block-head">
+          <h2>Research notes</h2>
+          <button class="link-btn" id="add-note-btn">+ Note</button>
+        </div>
+        <div class="notes" id="notes"></div>
+      </section>
+    </div>
+
+    <section class="block" id="market-block">
+      <div class="block-head">
+        <h2>Search</h2>
+        <span class="muted" id="market-status">—</span>
+      </div>
+      <input type="search" id="market-search" placeholder="Search any stock — ticker or company, e.g. AAPL, nvidia" autocomplete="off" />
+      <div class="market-filters" id="market-filters"></div>
+      <div class="market-list" id="market-list"></div>
+    </section>
+  </main>
+
+  <dialog id="stock-dialog" class="dialog stock-dialog">
+    <div class="stock-head">
+      <div>
+        <h3 id="sd-symbol">—</h3>
+        <p class="sd-name" id="sd-name"></p>
+      </div>
+      <button class="icon-btn" id="sd-close" aria-label="Close">×</button>
+    </div>
+    <div class="sd-price-row">
+      <span class="sd-price" id="sd-price">—</span>
+      <span class="sd-change" id="sd-change"></span>
+    </div>
+    <div class="sd-grid" id="sd-grid"></div>
+    <div class="dialog-actions">
+      <span class="spacer"></span>
+      <button class="btn btn-dark" id="sd-add">+ Add to holdings</button>
+    </div>
+  </dialog>
+
+  <!-- Position dialog -->
+  <dialog id="position-dialog" class="dialog">
+    <form method="dialog" id="position-form">
+      <h3 id="position-title">Add position</h3>
+      <label>Ticker
+        <input name="ticker" id="f-ticker" placeholder="AAPL" autocomplete="off" required />
+      </label>
+      <div class="field-row">
+        <label>Shares
+          <input name="shares" id="f-shares" type="number" step="any" min="0" placeholder="60" required />
+        </label>
+        <label>Avg cost / share
+          <input name="cost" id="f-cost" type="number" step="any" min="0" placeholder="180.00" required />
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Current price
+          <input name="price" id="f-price" type="number" step="any" min="0" placeholder="214.10" required />
+        </label>
+        <label>Day change %
+          <input name="day" id="f-day" type="number" step="any" placeholder="0.6" />
+        </label>
+      </div>
+      <label>Category
+        <input name="category" id="f-category" placeholder="Tech" autocomplete="off" />
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="position-cancel">Cancel</button>
+        <button type="submit" class="btn btn-dark" id="position-save">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Note dialog -->
+  <dialog id="note-dialog" class="dialog">
+    <form method="dialog" id="note-form">
+      <h3 id="note-title">New note</h3>
+      <label>Title
+        <input name="title" id="n-title" placeholder="NVDA · earnings thesis" autocomplete="off" required />
+      </label>
+      <label>Note
+        <textarea name="body" id="n-body" rows="5" placeholder="What's the thesis?"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button type="button" class="btn" id="note-delete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="note-cancel">Cancel</button>
+        <button type="submit" class="btn btn-dark">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="config.js"></script>
+  <script src="prices.js"></script>
+  <script src="store.js"></script>
+  <script src="app.js"></script>
+  <script src="market.js"></script>
+  <script type="module">
+    import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+    const c = window.SUPABASE_CONFIG;
+    window.sb = createClient(c.url, c.key);
+    window.App.boot();
+  </script>
+</body>
+</html>
