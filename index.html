@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Portfolio tracker</title>
   <link rel="stylesheet" href="styles.css" />
+  <script>
+    // Applied before first paint so there's no flash of the wrong theme —
+    // the full toggle UI lives on the Profile page (see app.js applyTheme/applyAccent).
+    (function () {
+      var theme = localStorage.getItem('cashmoney.theme');
+      if (theme && theme !== 'system') document.documentElement.dataset.theme = theme;
+      var accent = localStorage.getItem('cashmoney.accent');
+      if (accent) document.documentElement.style.setProperty('--accent', accent);
+    })();
+  </script>
 </head>
 <body>
   <div class="login" id="login-screen" hidden>
@@ -20,17 +30,61 @@
     </div>
   </div>
 
+  <nav class="side-rail" id="side-rail" aria-label="Primary" hidden>
+    <button class="rail-btn" id="rail-home" title="Home" aria-label="Home">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M3 11.5 12 4l9 7.5M5 10v9h5v-5h4v5h5v-9"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="rail-btn" id="rail-profile" title="Profile" aria-label="Profile">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4.5 19.5a7.5 7.5 0 0 1 15 0"/></svg>
+      <span>Profile</span>
+    </button>
+    <button class="rail-btn" id="rail-research" title="Research" aria-label="Research">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m19.5 19.5-4.3-4.3"/></svg>
+      <span>Research</span>
+    </button>
+    <button class="rail-btn" id="rail-connectors" title="Connectors" aria-label="Connectors">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m8 16 8-8m-5-1 1.5-1.5a3.5 3.5 0 0 1 5 5L17 16m-9 1-1.5 1.5a3.5 3.5 0 0 1-5-5L4 8"/></svg>
+      <span>Connectors</span>
+    </button>
+    <button class="rail-btn" id="rail-compound" title="Compound Calculator" aria-label="Compound Calculator">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M8 7h8"/><circle cx="8.3" cy="12" r="1" fill="currentColor"/><circle cx="12" cy="12" r="1" fill="currentColor"/><circle cx="15.7" cy="12" r="1" fill="currentColor"/><circle cx="8.3" cy="15.5" r="1" fill="currentColor"/><circle cx="12" cy="15.5" r="1" fill="currentColor"/><circle cx="15.7" cy="15.5" r="1" fill="currentColor"/></svg>
+      <span>Compound Calculator</span>
+    </button>
+    <button class="rail-btn" id="rail-settings" title="Settings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 3v2.5M12 18.5V21M4.2 7.5l2.2 1.3M17.6 15.2l2.2 1.3M4.2 16.5l2.2-1.3M17.6 8.8l2.2-1.3"/></svg>
+      <span>Settings</span>
+    </button>
+  </nav>
+
   <main class="app" id="app" hidden>
+    <div class="toast" id="toast" hidden></div>
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">◈</span>
-        <span class="brand-name">My portfolio</span>
-        <span class="live-pill" id="status-pill"><span class="dot"></span>Manual</span>
+        <button class="topbar-avatar" id="topbar-avatar" title="Profile" aria-label="Profile">
+          <img id="topbar-avatar-img" hidden alt="" />
+          <span id="topbar-avatar-fallback"></span>
+        </button>
+        <button class="brand-mark" id="home-btn" title="Aggregated Portfolios Summary" aria-label="Home — aggregated summary">◈</button>
+        <div class="pf-wrap">
+          <div class="top-search">
+            <button class="fav-open" id="fav-open" title="Favourites" aria-label="Favourites" aria-haspopup="true">★</button>
+            <input type="search" id="top-search" placeholder="Search all stocks…" autocomplete="off" />
+            <div class="top-search-menu" id="top-search-menu" hidden></div>
+            <div class="fav-menu" id="fav-menu" hidden></div>
+          </div>
+          <button class="pf-title" id="summary-btn" title="View the summary of all your portfolios">Portfolio’s summary</button>
+          <div class="pf-tabs" id="portfolio-tabs"></div>
+          <div class="tab-color-menu" id="tab-color-menu" hidden></div>
+        </div>
+        <span class="live-pill" id="status-pill" hidden><span class="dot"></span>Manual</span>
       </div>
+      <div class="ticker-clip"><div class="ticker" id="ticker"></div></div>
       <div class="topbar-actions">
-        <span class="updated" id="updated">—</span>
+        <span class="updated" id="updated" hidden>—</span>
         <span class="user-chip" id="user-chip" hidden><span id="user-email"></span></span>
         <button class="btn" id="refresh-btn" title="Recalculate">Refresh</button>
+        <button class="btn" id="import-btn" title="Import a portfolio">Import portfolio</button>
         <button class="btn btn-dark" id="add-btn">+ Add position</button>
         <button class="btn" id="signout-btn">Sign out</button>
       </div>
@@ -40,22 +94,105 @@
       <!-- metric cards injected -->
     </section>
 
+    <div class="two-col">
+      <section class="block card alloc-card">
+        <div class="block-head">
+          <h2>Allocation</h2>
+          <div class="alloc-controls">
+            <div class="fmt-dd" id="fmt-dd">
+              <button class="fmt-btn" id="fmt-btn" aria-haspopup="true">Format: <span id="fmt-label">Bar</span> <span class="pf-caret" aria-hidden="true">▾</span></button>
+              <div class="fmt-menu" id="fmt-menu" hidden>
+                <button class="fmt-item" data-fmt="bar">Bar</button>
+                <button class="fmt-item" data-fmt="pie">Pie</button>
+              </div>
+            </div>
+            <div class="fmt-dd" id="data-dd">
+              <button class="fmt-btn" id="data-btn" aria-haspopup="true">Data: <span id="data-label">Percentage</span> <span class="pf-caret" aria-hidden="true">▾</span></button>
+              <div class="fmt-menu" id="data-menu" hidden>
+                <button class="fmt-item" data-data="pct">Percentage</button>
+                <button class="fmt-item" data-data="value">Value</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="alloc-bar" id="alloc-bar"></div>
+        <div class="alloc-pie-wrap">
+          <div class="alloc-pie" id="alloc-pie" hidden></div>
+          <svg class="pie-tip-line" id="pie-tip-line" width="100%" height="100%" hidden>
+            <line x1="0" y1="0" x2="0" y2="0"></line>
+          </svg>
+          <div class="pie-tip" id="pie-tip" hidden></div>
+        </div>
+        <div class="alloc-legend" id="alloc-legend"></div>
+      </section>
+
+      <div class="col-stack">
+        <section class="block card sp-chart" id="summary-chart-card" hidden>
+          <div class="block-head">
+            <h2>Portfolio growth</h2>
+            <span class="muted" id="summary-chart-synced"></span>
+          </div>
+          <div class="sp-ranges" id="summary-chart-ranges">
+            <button class="sp-range" data-range="1D">1D</button>
+            <button class="sp-range" data-range="5D">5D</button>
+            <button class="sp-range" data-range="1M">1M</button>
+            <button class="sp-range" data-range="6M">6M</button>
+            <button class="sp-range" data-range="YTD">YTD</button>
+            <button class="sp-range" data-range="1Y">1Y</button>
+            <button class="sp-range active" data-range="All">All</button>
+          </div>
+          <div class="sp-chart-plot" id="summary-chart-plot"></div>
+        </section>
+
+        <section class="block card sp-chart" id="sharesies-chart-card" hidden>
+          <div class="block-head">
+            <h2>Sharesies performance</h2>
+            <span class="muted" id="sharesies-chart-synced"></span>
+          </div>
+          <div class="sp-ranges" id="sharesies-chart-ranges">
+            <button class="sp-range" data-range="1D">1D</button>
+            <button class="sp-range" data-range="5D">5D</button>
+            <button class="sp-range" data-range="1M">1M</button>
+            <button class="sp-range" data-range="6M">6M</button>
+            <button class="sp-range" data-range="YTD">YTD</button>
+            <button class="sp-range" data-range="1Y">1Y</button>
+            <button class="sp-range active" data-range="All">All</button>
+          </div>
+          <div class="sp-chart-plot" id="sharesies-chart-plot"></div>
+        </section>
+
+        <section class="block card" id="notes-card">
+          <div class="block-head">
+            <h2>Research notes</h2>
+            <button class="link-btn" id="add-note-btn">+ Note</button>
+          </div>
+          <div class="notes" id="notes"></div>
+        </section>
+      </div>
+    </div>
+
     <section class="block">
       <div class="block-head">
-        <h2>Holdings</h2>
+        <h2 id="holdings-title">Holdings</h2>
+        <div class="linked-dd" id="linked-dd" hidden>
+          <button class="linked-btn" id="linked-btn" aria-haspopup="true">Linked portfolios <span class="pf-caret" aria-hidden="true">▾</span></button>
+          <div class="linked-menu" id="linked-menu" hidden></div>
+        </div>
         <span class="muted" id="holdings-count"></span>
       </div>
+      <p class="muted refresh-note" id="refresh-note"></p>
       <div class="table-wrap">
         <table class="holdings">
-          <thead>
+          <thead id="holdings-head">
             <tr>
-              <th>Ticker</th>
-              <th class="num">Shares</th>
-              <th class="num">Cost</th>
-              <th class="num">Price</th>
-              <th class="num">Day</th>
-              <th class="num">Value</th>
-              <th class="num">Gain</th>
+              <th class="drag-col"></th>
+              <th data-sort="ticker">Ticker</th>
+              <th class="num" data-sort="shares">Shares</th>
+              <th class="num" data-sort="cost">Cost</th>
+              <th class="num" data-sort="price">Price</th>
+              <th class="num" data-sort="day">Day</th>
+              <th class="num" data-sort="value">Value</th>
+              <th class="num" data-sort="gain">Gain</th>
               <th></th>
             </tr>
           </thead>
@@ -65,32 +202,350 @@
       </div>
     </section>
 
-    <div class="two-col">
-      <section class="block card">
-        <div class="block-head"><h2>Allocation</h2></div>
-        <div class="alloc-bar" id="alloc-bar"></div>
-        <div class="alloc-legend" id="alloc-legend"></div>
-      </section>
-
-      <section class="block card">
-        <div class="block-head">
-          <h2>Research notes</h2>
-          <button class="link-btn" id="add-note-btn">+ Note</button>
-        </div>
-        <div class="notes" id="notes"></div>
-      </section>
-    </div>
-
-    <section class="block" id="market-block">
+    <section class="block market-block" id="pf-market-block">
       <div class="block-head">
         <h2>Search</h2>
-        <span class="muted" id="market-status">—</span>
+        <span class="muted mkt-status">—</span>
       </div>
-      <input type="search" id="market-search" placeholder="Search any stock — ticker or company, e.g. AAPL, nvidia" autocomplete="off" />
-      <div class="market-filters" id="market-filters"></div>
-      <div class="market-list" id="market-list"></div>
+      <input type="search" class="mkt-search" placeholder="Search any stock — ticker or company, e.g. AAPL, nvidia" autocomplete="off" />
+      <div class="market-filters mkt-filters"></div>
+      <div class="market-list mkt-list"></div>
+    </section>
+
+    <!-- Market home page. Hidden until opened from Home / the logo. -->
+    <section id="home-page" hidden>
+      <h1 class="page-title">Markets today</h1>
+      <div class="hm-section">
+        <h2 class="hm-h">Indices</h2>
+        <div class="hm-grid" id="hm-indices"></div>
+      </div>
+      <div class="hm-section">
+        <h2 class="hm-h">Currencies</h2>
+        <div class="hm-grid" id="hm-currencies"></div>
+      </div>
+      <div class="hm-section">
+        <h2 class="hm-h">Biggest movers</h2>
+        <div class="hm-movers">
+          <div class="hm-mover-col">
+            <h3 class="hm-mover-title up">Gainers</h3>
+            <div id="hm-gainers"></div>
+          </div>
+          <div class="hm-mover-col">
+            <h3 class="hm-mover-title down">Losers</h3>
+            <div id="hm-losers"></div>
+          </div>
+        </div>
+      </div>
+      <div class="hm-section market-block" data-quickadd="off">
+        <div class="hm-h-row">
+          <h2 class="hm-h">All stocks</h2>
+          <span class="muted mkt-status">—</span>
+        </div>
+        <input type="search" class="mkt-search" placeholder="Search any stock — ticker or company, e.g. AAPL, nvidia" autocomplete="off" />
+        <div class="market-filters mkt-filters"></div>
+        <div class="market-list mkt-list"></div>
+      </div>
+    </section>
+
+    <!-- Profile page. Hidden until opened from the left rail. -->
+    <section id="profile-page" hidden>
+      <h1 class="page-title">Profile</h1>
+      <div class="profile-card card">
+        <div class="profile-avatar-wrap" id="profile-avatar-wrap" title="Change photo">
+          <img class="profile-avatar" id="profile-avatar" alt="" hidden />
+          <div class="profile-avatar profile-avatar-fallback" id="profile-avatar-fallback" hidden></div>
+          <div class="profile-avatar-hint">Change photo</div>
+        </div>
+        <input type="file" id="profile-avatar-input" accept="image/*" hidden />
+        <div class="profile-info">
+          <h2 id="profile-name"></h2>
+          <p class="muted" id="profile-email"></p>
+          <p class="muted" id="profile-since"></p>
+          <p class="login-err" id="profile-avatar-err" hidden></p>
+        </div>
+      </div>
+
+      <div class="block card appearance-card">
+        <h2 class="appearance-h">Appearance</h2>
+        <p class="muted">Theme</p>
+        <div class="theme-toggle" id="theme-toggle">
+          <button type="button" class="theme-btn" data-theme="light">☀ Light</button>
+          <button type="button" class="theme-btn" data-theme="dark">☾ Dark</button>
+          <button type="button" class="theme-btn" data-theme="system">Auto</button>
+        </div>
+        <p class="muted accent-label">Accent colour</p>
+        <div class="accent-swatches" id="accent-swatches"></div>
+      </div>
+    </section>
+
+    <!-- Research page: every portfolio's research notes, in one place.
+         Hidden until opened from the left rail. -->
+    <section id="research-page" hidden>
+      <h1 class="page-title">Research</h1>
+      <h2 class="research-subhead">Stocks to research</h2>
+      <div class="research-watchlist" id="research-watchlist"></div>
+
+      <h2 class="research-subhead">Bull case calculator</h2>
+      <p class="muted">A freeform valuation model — not tied to any portfolio holding. Load a ticker to seed year one with real numbers, then type your own growth, margin and P/E assumptions for the years after.</p>
+      <div class="card bull-card">
+        <div class="bull-load-row">
+          <div class="bull-ticker-wrap">
+            <input type="text" id="bull-ticker" class="bull-ticker-input" placeholder="Ticker, e.g. AAPL" autocomplete="off" />
+            <div class="bull-ticker-menu" id="bull-ticker-menu" hidden></div>
+          </div>
+          <button class="btn btn-dark" id="bull-load">Load</button>
+          <span class="muted" id="bull-loaded-label"></span>
+        </div>
+        <div class="bull-table-wrap">
+          <span class="bull-tag">Bull case</span>
+          <div class="table-scroll">
+            <table id="bull-table" class="bull-table"></table>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="research-subhead">Notes</h2>
+      <p class="muted">All your research notes, across every portfolio. Click one to open it where it lives.</p>
+      <div class="notes research-notes" id="research-notes"></div>
+    </section>
+
+    <!-- Compound Calculator page. Hidden until opened from the left rail. -->
+    <section id="compound-page" hidden>
+      <h1 class="page-title">Compound Calculator</h1>
+      <p class="muted">Project how a starting balance plus regular monthly contributions could grow over time.</p>
+      <div class="card calc-card">
+        <label>Initial amount
+          <input type="number" id="calc-initial" value="1000" min="0" step="100" inputmode="decimal" />
+        </label>
+        <div class="field-row">
+          <label>Monthly contribution
+            <input type="number" id="calc-monthly" value="200" min="0" step="10" inputmode="decimal" />
+          </label>
+          <label>Annual interest rate (%)
+            <input type="number" id="calc-rate" value="7" min="0" step="0.1" inputmode="decimal" />
+          </label>
+        </div>
+        <label>Years
+          <input type="number" id="calc-years" value="20" min="1" step="1" inputmode="decimal" />
+        </label>
+      </div>
+      <div class="conn-totals calc-results">
+        <div class="conn-total"><span class="conn-total-n" id="calc-fv">—</span><span class="conn-total-label">future value</span></div>
+        <div class="conn-total"><span class="conn-total-n" id="calc-contributed">—</span><span class="conn-total-label">total contributed</span></div>
+        <div class="conn-total"><span class="conn-total-n" id="calc-interest">—</span><span class="conn-total-label">interest earned</span></div>
+      </div>
+      <section class="block card sp-chart calc-chart-card">
+        <div class="block-head">
+          <h2>Growth over time</h2>
+          <div class="calc-chart-legend">
+            <span class="calc-legend-item"><i class="calc-legend-dot calc-legend-dot-value"></i>Total value</span>
+            <span class="calc-legend-item"><i class="calc-legend-dot calc-legend-dot-contrib"></i>Amount put in</span>
+          </div>
+        </div>
+        <div class="sp-chart-plot" id="calc-chart-plot"></div>
+      </section>
+    </section>
+
+    <!-- Connectors page. Hidden until opened from the left rail. -->
+    <section id="connectors-page" hidden>
+      <h1 class="page-title">Connectors</h1>
+      <p class="muted">Data sources and account links powering the app.</p>
+      <div class="conn-totals" id="conn-totals">
+        <div class="conn-total"><span class="conn-total-n" id="conn-total-priced">—</span><span class="conn-total-label">stocks priced</span></div>
+        <div class="conn-total"><span class="conn-total-n" id="conn-total-financials">—</span><span class="conn-total-label">financials pulled</span></div>
+      </div>
+      <div class="connectors-list">
+        <div class="connector card">
+          <button class="connector-head" data-conn="finnhub">
+            <span class="connector-logo" aria-hidden="true">F</span>
+            <div class="connector-titles">
+              <h3 class="connector-name">Finnhub</h3>
+              <p class="connector-desc muted">Live stock quotes, company profiles and financials. Fetched server-side and cached.</p>
+              <p class="connector-meta" id="finnhub-meta"></p>
+            </div>
+            <span class="connector-status" id="finnhub-status"><span class="dot"></span>Checking…</span>
+            <span class="conn-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="connector-detail" id="finnhub-detail" hidden></div>
+          <div class="finnhub-key-form">
+            <p class="muted">Paste your own free Finnhub API key so your holdings refresh on your own 60-calls/min budget instead of sharing the app's shared key. <a href="https://finnhub.io/register" target="_blank" rel="noopener">Get a free key</a>.</p>
+            <div class="finnhub-key-row">
+              <input type="password" id="finnhub-key-input" placeholder="Paste your Finnhub API key" autocomplete="off" />
+              <button class="btn btn-dark" id="finnhub-key-save">Save</button>
+              <button class="btn" id="finnhub-key-change" hidden>Change API key</button>
+              <button class="btn" id="finnhub-key-clear">Clear</button>
+            </div>
+            <p class="finnhub-key-status" id="finnhub-key-status"></p>
+          </div>
+        </div>
+        <div class="connector card">
+          <button class="connector-head" data-conn="sharesies">
+            <span class="connector-logo" aria-hidden="true">S</span>
+            <div class="connector-titles">
+              <h3 class="connector-name">Sharesies</h3>
+              <p class="connector-desc muted">Import your Sharesies portfolio and keep holdings in sync automatically.</p>
+            </div>
+            <span class="connector-status" id="sharesies-status"><span class="dot"></span>Not connected</span>
+            <span class="conn-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="connector-detail" id="sharesies-detail" hidden></div>
+        </div>
+        <div class="connector card">
+          <button class="connector-head" data-conn="yahoo">
+            <span class="connector-logo" aria-hidden="true">Y</span>
+            <div class="connector-titles">
+              <h3 class="connector-name">Yahoo Finance scraper</h3>
+              <p class="connector-desc muted">Default quote source for the whole universe — no API key. Covers S&amp;P 500, Nasdaq 100, Dow, Russell 2000, FTSE 100, DAX and Nikkei 225.</p>
+            </div>
+            <span class="connector-status" id="yahoo-status"><span class="dot"></span>Not connected</span>
+            <span class="conn-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="connector-detail" id="yahoo-detail" hidden></div>
+        </div>
+        <div class="connector card">
+          <button class="connector-head" data-conn="yahoo-financials">
+            <span class="connector-logo" aria-hidden="true">Y</span>
+            <div class="connector-titles">
+              <h3 class="connector-name">Yahoo Financials</h3>
+              <p class="connector-desc muted">Income statement, balance sheet, and cash flow for a stock's Financials tab. Separate connector from the quote scraper above — needs its own session cookie + crumb token, cached per stock for a day.</p>
+            </div>
+            <span class="connector-status" id="yahoo-financials-status"><span class="dot"></span>Not connected</span>
+            <span class="conn-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="connector-detail" id="yahoo-financials-detail" hidden></div>
+        </div>
+      </div>
+
+      <h2 class="coverage-title">Live coverage</h2>
+      <p class="muted">Index membership and how many of each are currently priced, by source.</p>
+      <div class="table-wrap coverage-wrap">
+        <table class="holdings coverage" id="coverage-table">
+          <thead>
+            <tr>
+              <th></th>
+              <th>Index</th>
+              <th class="num">Members</th>
+              <th>Membership source</th>
+              <th class="num">Priced live</th>
+              <th class="num">via Finnhub</th>
+              <th class="num">via Yahoo</th>
+              <th class="num" title="How many of this group's Yahoo-priced members have been refreshed since the current sweep lap started">Current sweep</th>
+              <th class="num" title="How long ago the whole group was last fully refreshed (its oldest live price)">Updated</th>
+            </tr>
+          </thead>
+          <tbody id="coverage-body"><tr><td colspan="9" class="muted">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Individual stock page (Yahoo-style). Hidden until a stock is opened. -->
+    <section id="stock-page" hidden>
+      <button class="btn sp-back" id="sp-back">← Back</button>
+
+      <div class="sp-layout">
+        <nav class="sp-nav" aria-label="Stock sections">
+          <button class="sp-nav-item active" data-tab="summary">Summary</button>
+          <button class="sp-nav-item" disabled title="Coming soon">News</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Chart</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Statistics</button>
+          <button class="sp-nav-item" data-tab="research">Research &amp; Projections</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Historical data</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Profile</button>
+          <button class="sp-nav-item" data-tab="financials">Financials</button>
+          <button class="sp-nav-item" data-tab="analysis">Analyst projections</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Options</button>
+          <button class="sp-nav-item" disabled title="Coming soon">Holders</button>
+        </nav>
+
+        <div class="sp-main">
+          <div class="sp-head">
+            <div class="sp-head-info">
+              <img class="sp-logo" id="sp-page-logo" alt="" hidden />
+              <div>
+                <div class="sp-title-row">
+                  <h1 id="sp-page-symbol">—</h1>
+                  <button class="fav-star" id="sp-fav" title="Add to favourites — keeps this stock on Finnhub's live refresh" aria-pressed="false" aria-label="Toggle favourite">☆</button>
+                </div>
+                <p class="sp-page-name" id="sp-page-name"></p>
+                <div class="sd-tags" id="sp-page-tags"></div>
+              </div>
+            </div>
+            <button class="btn btn-dark" id="sp-page-add">+ Add to holdings</button>
+          </div>
+
+          <div class="sp-price-row">
+            <span class="sp-big-price" id="sp-page-price">—</span>
+            <span class="sp-big-chg" id="sp-page-chg"></span>
+            <span class="sp-asof" id="sp-page-asof"></span>
+          </div>
+
+          <div id="sp-tab-summary">
+            <div class="sp-chart card">
+              <div class="sp-ranges" id="sp-ranges">
+                <button class="sp-range" data-range="1D">1D</button>
+                <button class="sp-range" data-range="5D">5D</button>
+                <button class="sp-range" data-range="1M">1M</button>
+                <button class="sp-range" data-range="6M">6M</button>
+                <button class="sp-range" data-range="YTD">YTD</button>
+                <button class="sp-range active" data-range="1Y">1Y</button>
+                <button class="sp-range" data-range="5Y">5Y</button>
+                <button class="sp-range" data-range="All">All</button>
+              </div>
+              <div class="sp-chart-plot" id="sp-chart-plot"></div>
+            </div>
+
+            <div class="sp-stats" id="sp-stats"></div>
+
+            <div class="sp-overview card">
+              <h3 id="sp-ov-title">Overview</h3>
+              <p class="muted" id="sp-ov-body">—</p>
+            </div>
+          </div>
+
+          <div id="sp-tab-research" hidden>
+            <div id="rp-content"><p class="muted">Loading…</p></div>
+            <div class="an-tip" id="rp-tip" hidden></div>
+          </div>
+
+          <div id="sp-tab-financials" hidden>
+            <div class="fin-controls">
+              <div class="fin-statements" id="fin-statements">
+                <button class="fin-tab active" data-statement="income">Income statement</button>
+                <button class="fin-tab" data-statement="balance">Balance sheet</button>
+                <button class="fin-tab" data-statement="cashflow">Cash flow</button>
+              </div>
+              <div class="fin-periods" id="fin-periods">
+                <button class="fin-tab active" data-period="annual">Annual</button>
+                <button class="fin-tab" data-period="quarterly">Quarterly</button>
+              </div>
+            </div>
+            <div class="table-wrap fin-wrap" id="fin-table-wrap">
+              <p class="muted">Loading…</p>
+            </div>
+          </div>
+
+          <div id="sp-tab-analysis" hidden>
+            <div id="an-content"><p class="muted">Loading…</p></div>
+            <div class="an-tip" id="an-tip" hidden></div>
+          </div>
+        </div>
+      </div>
     </section>
   </main>
+
+  <dialog id="portfolio-dialog" class="dialog">
+    <form method="dialog" id="portfolio-form">
+      <h3 id="pf-title">New portfolio</h3>
+      <label>Name
+        <input name="name" id="pf-name" placeholder="e.g. Long-term, Crypto, ISA" autocomplete="off" required />
+      </label>
+      <div class="dialog-actions">
+        <span class="spacer"></span>
+        <button type="button" class="btn" id="pf-cancel">Cancel</button>
+        <button type="submit" class="btn btn-dark" id="pf-save">Create</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="stock-dialog" class="dialog stock-dialog">
     <div class="stock-head">
@@ -144,6 +599,19 @@
     </form>
   </dialog>
 
+  <!-- Import portfolio dialog: pick from connected accounts (Sharesies), then
+       choose which holdings to bring in as new positions. -->
+  <dialog id="import-dialog" class="dialog">
+    <div id="import-body">
+      <h3>Import portfolio</h3>
+      <p class="muted" id="import-msg">Checking connectors…</p>
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="import-cancel">Close</button>
+      <button type="button" class="btn btn-dark" id="import-confirm" hidden>Import selected</button>
+    </div>
+  </dialog>
+
   <!-- Note dialog -->
   <dialog id="note-dialog" class="dialog">
     <form method="dialog" id="note-form">
@@ -168,6 +636,9 @@
   <script src="store.js"></script>
   <script src="app.js"></script>
   <script src="market.js"></script>
+  <script src="ticker.js"></script>
+  <script src="stock.js"></script>
+  <script src="home.js"></script>
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
     const c = window.SUPABASE_CONFIG;

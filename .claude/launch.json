@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "portfolio-tracker",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4178", "--directory", "/Users/jamesphilipmurphy/Documents/portfolio-tracker"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["start.sh"],
       "port": 4178
     }
   ]
