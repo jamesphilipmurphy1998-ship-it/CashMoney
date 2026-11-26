@@ -104,6 +104,29 @@ const Store = (() => {
     if (r.error) throw r.error;
   }
 
+  // Locked Bull case calculator projections (see supabase/bull-locks-migration.sql)
+  // — one JSON blob per user, keyed by "TICKER::case" (bull/standard/bear each
+  // lock independently), so a locked projection survives refreshes/logouts/
+  // logins instead of only living in the page's in-memory state.
+  // .maybeSingle() because a brand-new user has no row here yet.
+  async function getBullLocks() {
+    const r = await sb().from('user_settings').select('bull_locks').maybeSingle();
+    if (r.error) throw r.error;
+    return r.data?.bull_locks || {};
+  }
+  async function saveBullLock(key, snapshot) {
+    const locks = await getBullLocks();
+    locks[key] = snapshot;
+    const r = await sb().from('user_settings').upsert({ bull_locks: locks });
+    if (r.error) throw r.error;
+  }
+  async function deleteBullLock(key) {
+    const locks = await getBullLocks();
+    delete locks[key];
+    const r = await sb().from('user_settings').upsert({ bull_locks: locks });
+    if (r.error) throw r.error;
+  }
+
   // Delete a portfolio and everything in it. No FK cascade on portfolio_id,
   // so clear the holdings and notes first, then the portfolio row.
   async function deletePortfolio(pid) {
@@ -193,5 +216,5 @@ const Store = (() => {
     };
   }
 
-  return { load, loadAll, save, id, onAuth, signInWithGoogle, signOut, uploadAvatar, listPortfolios, createPortfolio, renamePortfolio, deletePortfolio, adoptOrphans, saveSharesiesHistory, markSharesiesLinked, loadSummaryHistory, recordSummarySnapshot, getFinnhubKey, saveFinnhubKey, seed };
+  return { load, loadAll, save, id, onAuth, signInWithGoogle, signOut, uploadAvatar, listPortfolios, createPortfolio, renamePortfolio, deletePortfolio, adoptOrphans, saveSharesiesHistory, markSharesiesLinked, loadSummaryHistory, recordSummarySnapshot, getFinnhubKey, saveFinnhubKey, getBullLocks, saveBullLock, deleteBullLock, seed };
 })();
