@@ -1277,3 +1277,9 @@ body.notifications-open .pf-title.active { color: var(--text); }
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
 }
+
+/* Portfolio search rows: only the name opens the stock page */
+.mrow.name-only { cursor: default; }
+.mrow.name-only .msym, .mrow.name-only .mname { cursor: pointer; }
+.mrow.name-only .msym:hover, .mrow.name-only .mname:hover { text-decoration: underline; }
+.mrow.name-only .mq-add { cursor: pointer; }

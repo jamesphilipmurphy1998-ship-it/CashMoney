@@ -118,7 +118,7 @@
         .map((x) => {
           const q = quotes[x.s];
           const day = q ? q.day : null;
-          return `<button class="mrow" data-sym="${esc(x.s)}">
+          return `<button class="mrow${allowAdd ? ' name-only' : ''}" data-sym="${esc(x.s)}">
             <span class="msym">${esc(x.s)}</span>
             <span class="mname">${esc(x.n || '')}${metaChips(x)}</span>
             ${allowAdd ? `<span class="mq-add" data-add="${esc(x.s)}" title="Quick add to this portfolio" role="button">+</span>` : ''}
@@ -161,19 +161,22 @@
     listEl.addEventListener('click', (e) => {
       const add = e.target.closest('.mq-add');
       if (add) {
+        // The + opens the same Add position dialog as "Add to holdings" on a
+        // stock page (ticker and live price pre-filled), rather than dropping
+        // the stock in with 0 shares.
         e.stopPropagation();
         const sym = add.dataset.add;
-        if (window.App && window.App.quickAdd) {
-          const q = quotes[sym];
-          if (window.App.quickAdd(sym, q ? q.price : 0)) {
-            add.textContent = '✓';
-            add.classList.add('added');
-          }
-        }
+        const q = quotes[sym];
+        if (window.App && window.App.addFromMarket) window.App.addFromMarket(sym, q ? q.price : '');
         return;
       }
       const row = e.target.closest('.mrow');
-      if (row) openStock(row.dataset.sym);
+      if (!row) return;
+      // In a portfolio's search (rows with a +), only the name opens the stock
+      // page — taps elsewhere on the row do nothing, so a stray tap near the +
+      // can't navigate away. Other lists keep whole-row click.
+      if (row.classList.contains('name-only') && !e.target.closest('.msym, .mname')) return;
+      openStock(row.dataset.sym);
     });
 
     const inst = {
