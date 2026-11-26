@@ -173,18 +173,20 @@
     window.scrollTo(0, 0);
     // Lands on Summary by default, regardless of which section was open last
     // time — except when opened from the Research page's watchlist, which
-    // asks for opts.tab: 'research' instead. Every other entry point (search,
+    // asks for opts.tab: 'research' instead, or the Earnings Calendar's
+    // chips, which ask for 'financials'. Every other entry point (search,
     // ticker strip, quick-add, etc.) always opens Summary.
-    const tab = opts.tab === 'research' ? 'research' : 'summary';
+    const tab = ['research', 'financials'].includes(opts.tab) ? opts.tab : 'summary';
     document.querySelectorAll('.sp-nav-item[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $('#sp-tab-summary').hidden = tab !== 'summary';
     $('#sp-tab-news').hidden = true;
     $('#sp-tab-research').hidden = tab !== 'research';
     $('#sp-tab-stocks').hidden = true;
-    $('#sp-tab-financials').hidden = true;
+    $('#sp-tab-financials').hidden = tab !== 'financials';
     $('#sp-tab-analysis').hidden = true;
     $('#sp-tab-statistics').hidden = true;
     if (tab === 'research') loadResearch();
+    if (tab === 'financials') loadFinancials();
 
     // Indices can't be added to holdings or favourited.
     $('#sp-page-add').style.display = isIndex ? 'none' : '';

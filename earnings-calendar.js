@@ -196,7 +196,7 @@
   page.addEventListener('click', (e) => {
     const btn = e.target.closest('.ec-chip[data-sym]');
     if (!btn || !window.StockPage) return;
-    StockPage.show(btn.dataset.sym);
+    StockPage.show(btn.dataset.sym, { tab: 'financials' });
   });
 
   // ── Search: jump the grid to a specific company's earnings date ────────
