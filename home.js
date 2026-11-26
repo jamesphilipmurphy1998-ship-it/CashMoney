@@ -286,6 +286,7 @@
     if (window.ResearchPage) ResearchPage.close();
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
     document.body.classList.add('home-open');
     page.hidden = false;
     window.scrollTo(0, 0);

@@ -103,6 +103,7 @@ function applyView(view) {
       if (window.ResearchPage) ResearchPage.close();
       if (window.EarningsCalendarPage) EarningsCalendarPage.close();
       if (window.CompoundPage) CompoundPage.close();
+      if (window.SettingsPage) SettingsPage.close();
       if (window.HomePage) HomePage.close();
       selectPortfolio((view && view.pid) || AGG, { closeOverlays: false });
     } else if (view.type === 'home' && window.HomePage) {
@@ -119,6 +120,8 @@ function applyView(view) {
       EarningsCalendarPage.show();
     } else if (view.type === 'compound' && window.CompoundPage) {
       CompoundPage.show();
+    } else if (view.type === 'settings' && window.SettingsPage) {
+      SettingsPage.show();
     }
   } finally {
     restoringView = false;
@@ -1443,6 +1446,7 @@ async function selectPortfolio(pid, { closeOverlays = true } = {}) {
     if (window.ResearchPage) ResearchPage.close();
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
   }
   activePid = pid;
   localStorage.setItem('cashmoney.activePid', pid);
@@ -1580,6 +1584,7 @@ const goHome = () => {
     if (window.ResearchPage) ResearchPage.close();
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
   }
 };
 $('#summary-btn').addEventListener('click', goHome);
@@ -1606,6 +1611,7 @@ const ConnectorsPage = {
     if (window.ResearchPage) ResearchPage.close();
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
     document.body.classList.add('connectors-open');
     $('#connectors-page').hidden = false;
     window.scrollTo(0, 0);
@@ -1914,6 +1920,7 @@ const ResearchPage = {
     if (window.HomePage) HomePage.close();
     if (window.ProfilePage) ProfilePage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
     document.body.classList.add('research-open');
     $('#research-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2608,6 +2615,7 @@ const ProfilePage = {
     if (window.ResearchPage) ResearchPage.close();
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
     document.body.classList.add('profile-open');
     $('#profile-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2642,6 +2650,63 @@ const ProfilePage = {
   },
 };
 window.ProfilePage = ProfilePage;
+
+// Settings page: a menu of rows modelled on other finance apps' settings
+// screens (Robinhood / Revolut / Sharesies style). Most rows are
+// placeholders — they just toast "not wired up yet" so each one can be kept
+// or deleted from index.html's #settings-page. The ones that already do
+// something real are marked data-go (jump to an existing page) or
+// #settings-logout. Toggles are visual-only for now.
+const SettingsPage = {
+  show() {
+    Nav.push({ type: 'settings' });
+    if (window.StockPage) StockPage.close();
+    if (window.ConnectorsPage) ConnectorsPage.close();
+    if (window.HomePage) HomePage.close();
+    if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
+    if (window.CompoundPage) CompoundPage.close();
+    if (window.ProfilePage) ProfilePage.close();
+    document.body.classList.add('settings-open');
+    $('#settings-page').hidden = false;
+    window.scrollTo(0, 0);
+    const u = currentUser;
+    if (u) {
+      const meta = u.user_metadata || {};
+      $('#settings-account-name').textContent = meta.full_name || meta.name || (u.email || '').split('@')[0];
+      $('#settings-account-email').textContent = u.email || '';
+    }
+  },
+  close() {
+    document.body.classList.remove('settings-open');
+    $('#settings-page').hidden = true;
+  },
+};
+window.SettingsPage = SettingsPage;
+
+$('#settings-page').addEventListener('click', (e) => {
+  const toggle = e.target.closest('.set-switch');
+  if (toggle) {
+    const on = toggle.getAttribute('aria-checked') !== 'true';
+    toggle.setAttribute('aria-checked', String(on));
+    return;
+  }
+  const row = e.target.closest('.set-row');
+  if (!row) return;
+  if (row.id === 'settings-logout') {
+    if (confirm('Log out of Portfolio tracker?')) Store.signOut();
+    return;
+  }
+  const go = row.dataset.go;
+  if (go === 'profile') return ProfilePage.show();
+  if (go === 'connectors') return ConnectorsPage.show();
+  if (row.querySelector('.set-switch')) {
+    const sw = row.querySelector('.set-switch');
+    sw.setAttribute('aria-checked', String(sw.getAttribute('aria-checked') !== 'true'));
+    return;
+  }
+  showToast('Not wired up yet — placeholder', { done: true });
+});
 
 // Click the avatar (or its hover hint) to pick a new photo, uploaded to the
 // "avatars" Supabase Storage bucket and set as this account's avatar_url.
@@ -3143,7 +3208,7 @@ $('#connectors-page').addEventListener('click', (e) => {
   detail.hidden = !open;
   card.classList.toggle('open', open);
 });
-$('#rail-settings').addEventListener('click', () => alert('Settings — coming soon.'));
+$('#rail-settings').addEventListener('click', () => SettingsPage.show());
 
 const pfTabs = $('#portfolio-tabs');
 pfTabs.addEventListener('click', async (e) => {
@@ -3162,6 +3227,7 @@ pfTabs.addEventListener('click', async (e) => {
       if (window.ResearchPage) ResearchPage.close();
       if (window.EarningsCalendarPage) EarningsCalendarPage.close();
       if (window.CompoundPage) CompoundPage.close();
+      if (window.SettingsPage) SettingsPage.close();
     }
   }
 });

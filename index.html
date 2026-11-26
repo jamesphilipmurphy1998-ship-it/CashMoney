@@ -346,6 +346,70 @@
       </div>
     </section>
 
+    <!-- Settings page. Hidden until opened from the left rail. Placeholder
+         rows: delete any <button class="set-row"> you don't want. Rows with
+         data-go jump to an existing page; Log out really signs out. -->
+    <section id="settings-page" hidden>
+      <h1 class="page-title">Settings</h1>
+      <div class="set-account card">
+        <div class="set-account-av" aria-hidden="true">◈</div>
+        <div><div class="set-account-name" id="settings-account-name"></div><div class="muted" id="settings-account-email"></div></div>
+      </div>
+      <h2 class="set-group-h">Account</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row" data-go="profile"><div class="set-text"><span class="set-label">Profile</span><span class="set-sub">Name, photo and email</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Personal details</span><span class="set-sub">Legal name, address, date of birth</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Linked accounts</span><span class="set-sub">Google sign-in</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row" data-go="connectors"><div class="set-text"><span class="set-label">Connected brokers</span><span class="set-sub">Sharesies and other connectors</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+      </div>
+      <h2 class="set-group-h">Security</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Biometric / passcode lock</span><span class="set-sub">Require it when opening the app</span></div><span class="set-switch" role="switch" aria-checked="false"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Two-factor authentication</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Active sessions and devices</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Login history</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+      </div>
+      <h2 class="set-group-h">Notifications</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Push notifications</span></div><span class="set-switch" role="switch" aria-checked="true"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Price alerts</span></div><span class="set-switch" role="switch" aria-checked="true"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Earnings reminders</span></div><span class="set-switch" role="switch" aria-checked="true"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Daily portfolio summary</span></div><span class="set-switch" role="switch" aria-checked="false"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">News on my holdings</span></div><span class="set-switch" role="switch" aria-checked="false"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Email notifications</span></div><span class="set-switch" role="switch" aria-checked="false"></span></button>
+      </div>
+      <h2 class="set-group-h">Preferences</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row" data-go="profile"><div class="set-text"><span class="set-label">Appearance</span><span class="set-sub">Theme and accent colour</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Display currency</span></div><span class="set-val">NZD</span><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Default portfolio</span></div><span class="set-val">Summary</span><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Default chart range</span></div><span class="set-val">1M</span><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Language</span></div><span class="set-val">English</span><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Show cents</span></div><span class="set-switch" role="switch" aria-checked="true"></span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Hide balances</span></div><span class="set-switch" role="switch" aria-checked="false"></span></button>
+      </div>
+      <h2 class="set-group-h">Data and privacy</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Export my data</span><span class="set-sub">Download holdings and history as CSV</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Import a portfolio</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Clear cached prices</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Privacy settings</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row danger"><div class="set-text"><span class="set-label">Delete account</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+      </div>
+      <h2 class="set-group-h">Support and legal</h2>
+      <div class="set-group card">
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Help centre</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Contact support</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Send feedback</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Terms of service</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+        <button type="button" class="set-row"><div class="set-text"><span class="set-label">Privacy policy</span></div><span class="set-chev" aria-hidden="true">›</span></button>
+      </div>
+      <div class="set-group card set-logout-card">
+        <button type="button" class="set-row danger" id="settings-logout"><div class="set-text"><span class="set-label">Log out</span></div></button>
+      </div>
+      <p class="muted set-version">Portfolio tracker</p>
+    </section>
+
     <!-- Research page: every portfolio's research notes, in one place.
          Hidden until opened from the left rail. -->
     <section id="research-page" hidden>

@@ -152,6 +152,7 @@
     if (window.ProfilePage) ProfilePage.close();
     if (window.ResearchPage) ResearchPage.close();
     if (window.CompoundPage) CompoundPage.close();
+    if (window.SettingsPage) SettingsPage.close();
     document.body.classList.add('earnings-calendar-open');
     page.hidden = false;
     window.scrollTo(0, 0);
