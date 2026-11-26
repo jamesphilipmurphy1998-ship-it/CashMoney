@@ -196,6 +196,10 @@ async function handleApi(req, res, url) {
         console.warn('[history] backfill fetch failed for', symbol, e.message);
       }
     }
+    // Already seeded, but the app/server wasn't running for a while? Pull just
+    // the missing days (see history.ensureFresh) so charts don't depend on
+    // having been opened daily.
+    await history.ensureFresh(symbol, (range) => yahoo.fetchHistory(symbol, range, '1d'));
     return send(res, 200, { symbol, points: history.read(symbol), backfilled: history.isBackfilled(symbol) });
   }
   // GET /api/intraday/AAPL -> today's real 1-minute bars straight from Yahoo,
