@@ -127,6 +127,18 @@ const Store = (() => {
     if (r.error) throw r.error;
   }
 
+  // Display preferences synced across devices (see prefs-sync.js and
+  // supabase/prefs-migration.sql). One jsonb blob; {} for a new user.
+  async function getPrefs() {
+    const r = await sb().from('user_settings').select('prefs').maybeSingle();
+    if (r.error) throw r.error;
+    return r.data?.prefs || {};
+  }
+  async function savePrefs(prefs) {
+    const r = await sb().from('user_settings').upsert({ prefs });
+    if (r.error) throw r.error;
+  }
+
   // Delete a portfolio and everything in it. No FK cascade on portfolio_id,
   // so clear the holdings and notes first, then the portfolio row.
   async function deletePortfolio(pid) {
@@ -216,5 +228,5 @@ const Store = (() => {
     };
   }
 
-  return { load, loadAll, save, id, onAuth, signInWithGoogle, signOut, uploadAvatar, listPortfolios, createPortfolio, renamePortfolio, deletePortfolio, adoptOrphans, saveSharesiesHistory, markSharesiesLinked, loadSummaryHistory, recordSummarySnapshot, getFinnhubKey, saveFinnhubKey, getBullLocks, saveBullLock, deleteBullLock, seed };
+  return { load, loadAll, save, id, onAuth, signInWithGoogle, signOut, uploadAvatar, listPortfolios, createPortfolio, renamePortfolio, deletePortfolio, adoptOrphans, saveSharesiesHistory, markSharesiesLinked, loadSummaryHistory, recordSummarySnapshot, getFinnhubKey, saveFinnhubKey, getBullLocks, saveBullLock, getPrefs, savePrefs, deleteBullLock, seed };
 })();
