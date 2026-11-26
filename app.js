@@ -3376,7 +3376,6 @@ $('#google-btn').addEventListener('click', async () => {
   }
 });
 
-$('#signout-btn').addEventListener('click', () => Store.signOut());
 
 // ---- Topbar stock search --------------------------------------------------
 // Searches the full universe (via market.js) and opens the stock detail panel.
