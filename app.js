@@ -822,6 +822,17 @@ async function loadHoldingLogos(tickers) {
 let allocFormat = localStorage.getItem('cashmoney.allocFormat') || 'bar';
 let allocData = localStorage.getItem('cashmoney.allocData') || 'pct'; // 'pct' | 'value'
 
+// Cash / placeholder rows have no stock page to open.
+const allocLinkable = (name) => name !== '—' && cashLabel(name) == null;
+$('#alloc-legend').addEventListener('click', (e) => {
+  const b = e.target.closest('.alloc-link[data-sym]');
+  if (b && window.StockPage) StockPage.show(b.dataset.sym);
+});
+$('#alloc-pie').addEventListener('click', (e) => {
+  const el = e.target.closest('[data-sym]');
+  if (el && window.StockPage) StockPage.show(el.dataset.sym);
+});
+
 function renderAllocation() {
   const bar = $('#alloc-bar');
   const pie = $('#alloc-pie');
@@ -854,7 +865,7 @@ function renderAllocation() {
   legend.innerHTML = rows
     .map(
       (r) => `<div class="row">
-        <span class="name"><span class="swatch" style="background:${r.color}"></span>${esc(r.name)}</span>
+        <span class="name"><span class="swatch" style="background:${r.color}"></span>${allocLinkable(r.name) ? `<button type="button" class="alloc-link" data-sym="${esc(r.name)}" title="Open ${esc(r.name)}">${esc(r.name)}</button>` : esc(r.name)}</span>
         <span>${allocData === 'value' ? money(r.val) : r.share.toFixed(0) + '%'}</span>
       </div>`
     )
@@ -866,7 +877,7 @@ function renderAllocation() {
 // real SVG-namespaced nodes (setting innerHTML on an <svg> element does not).
 function pieSvg(rows) {
   const cx = 100, cy = 100, r = 96;
-  const tipAttr = (row) => `data-tip="${esc(row.name)} — ${row.share.toFixed(1)}% (${esc(money(row.val))})"`;
+  const tipAttr = (row) => `data-tip="${esc(row.name)} — ${row.share.toFixed(1)}% (${esc(money(row.val))})"${allocLinkable(row.name) ? ` data-sym="${esc(row.name)}" class="alloc-slice"` : ''}`;
   let inner;
   if (rows.length === 1) {
     inner = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${rows[0].color}" ${tipAttr(rows[0])}></circle>`;

@@ -1221,3 +1221,8 @@ body.settings-open .pf-title.active { color: var(--text); }
 .set-switch[aria-checked="true"] { background: var(--accent); }
 .set-switch[aria-checked="true"]::after { transform: translateX(18px); }
 .set-version { text-align: center; margin: 18px 0 8px; }
+
+/* Allocation: company names open their stock page */
+.alloc-link { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.alloc-link:hover { color: var(--accent); text-decoration: underline; }
+.alloc-slice { cursor: pointer; }
