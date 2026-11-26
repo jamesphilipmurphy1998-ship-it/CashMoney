@@ -13,6 +13,18 @@
 
   let current = null; // symbol being shown
   let lastPrice = null; // for "+ Add to holdings"
+  let lastPrevClose = null; // anchors the 1D chart's % change — see drawChart
+
+  // Major-index symbols (server/universe.js's MAJOR_INDICES) mapped to the
+  // membership tag their constituents actually carry in the universe (see
+  // server/indexes.js's SOURCES) — drives the index page's "Stocks" tab.
+  // Indices with no constituents source (commodities, the Dollar Index) just
+  // don't get a "Stocks" tab, same as "Research & Projections" for them.
+  const INDEX_MEMBER_TAG = {
+    '^GSPC': 'S&P 500', '^NDX': 'Nasdaq 100', '^DJI': 'Dow 30',
+    '^RUT': 'Russell 2000', '^FTSE': 'FTSE 100', '^GDAXI': 'DAX', '^N225': 'Nikkei 225',
+  };
+  let stocksInst = null; // the "Stocks" tab's mounted market-block (one instance, re-tagged per index)
 
   // ── favourites ─────────────────────────────────────────────────────────
   // Starred symbols are pinned to Finnhub's live-refresh hot set. Requesting a
@@ -46,27 +58,64 @@
     return '$' + m.toFixed(0) + 'M';
   }
 
-  function statCells(q, met, cap) {
-    const range = q && q.low && q.high ? `${num(q.low)} – ${num(q.high)}` : '—';
-    const r52 = met && met.low52 && met.high52 ? `${num(met.low52)} – ${num(met.high52)}` : '—';
-    const avgVol = met && met.avgVol10d ? num(met.avgVol10d * 1e6, 0) : '—';
+  // stats is the same /api/statistics payload the Statistics tab uses (see
+  // getStatistics in server/yahoo-financials.js) — Finnhub's free tier only
+  // covers a handful of these fields, so whichever of these Yahoo actually
+  // has takes priority over Finnhub's q/met, instead of showing "—".
+  function statCells(q, met, cap, stats, valuation) {
+    const qd = stats && stats.quoteDetail;
+    const vm = stats && stats.valuationMeasures;
+    const fh = stats && stats.financialHighlights;
+    const ti = stats && stats.tradingInformation;
+    // Trailing P/E specifically has two different Yahoo sources in this app
+    // (summaryDetail.trailingPE via stats, vs. the fundamentals-timeseries
+    // "PeRatio" the Statistics tab's Valuation measures table uses for its
+    // own "Current" column) that can disagree by a little, since they're
+    // refreshed by different Yahoo backend pipelines. Preferring the
+    // valuation-history one here keeps this cell consistent with what the
+    // Valuation measures table shows, rather than showing a second, slightly
+    // different "TTM" P/E on the same page.
+    const trailingPE = valuation && valuation.current && valuation.current.PeRatio != null ? valuation.current.PeRatio : vm && vm.trailingPE;
+
+    const openVal = qd && qd.open != null ? qd.open : q && q.open;
+    const range = qd && qd.dayLow != null && qd.dayHigh != null
+      ? `${num(qd.dayLow)} – ${num(qd.dayHigh)}`
+      : q && q.low && q.high ? `${num(q.low)} – ${num(q.high)}` : '—';
+    const r52 = ti && ti.fiftyTwoWeekLow != null && ti.fiftyTwoWeekHigh != null
+      ? `${num(ti.fiftyTwoWeekLow)} – ${num(ti.fiftyTwoWeekHigh)}`
+      : met && met.low52 && met.high52 ? `${num(met.low52)} – ${num(met.high52)}` : '—';
+    const avgVol = qd && qd.averageVolume10Day != null ? num(qd.averageVolume10Day, 0) : met && met.avgVol10d ? num(met.avgVol10d * 1e6, 0) : '—';
+    const marketCapVal = vm && vm.marketCap != null ? '$' + fmtStatNum(vm.marketCap) : fmtCap(cap);
+    const beta = ti && ti.beta != null ? num(ti.beta) : met ? num(met.beta) : '—';
+    const peRatio = trailingPE != null ? num(trailingPE) : met ? num(met.pe) : '—';
+    const eps = fh && fh.dilutedEps != null ? num(fh.dilutedEps) : met ? num(met.eps) : '—';
+    const earningsDate = qd && qd.earningsDate ? fmtStatDate(qd.earningsDate) : '—';
+    const divYield = ti && ti.dividendRate != null
+      ? `$${Number(ti.dividendRate).toFixed(2)} (${(Number(ti.dividendYield || 0) * 100).toFixed(2)}%)`
+      : met && met.divYield ? num(met.divYield) + '%' : '—';
+    const exDivDate = ti && ti.exDividendDate ? fmtStatDate(ti.exDividendDate) : '—';
+    const target = qd && qd.oneYearTargetEst != null ? money(qd.oneYearTargetEst) : '—';
+    const bid = qd && qd.bid ? money(qd.bid) : '—';
+    const ask = qd && qd.ask ? money(qd.ask) : '—';
+    const volume = qd && qd.volume != null ? num(qd.volume, 0) : '—';
+
     return [
       ['Previous close', q ? money(q.prevClose) : '—'],
-      ['Open', q && q.open ? money(q.open) : '—'],
-      ['Bid', '—'],
-      ['Ask', '—'],
+      ['Open', openVal ? money(openVal) : '—'],
+      ['Bid', bid],
+      ['Ask', ask],
       ["Day's range", range],
       ['52-week range', r52],
-      ['Volume', '—'],
+      ['Volume', volume],
       ['Avg. volume (10d)', avgVol],
-      ['Market cap', fmtCap(cap)],
-      ['Beta', met ? num(met.beta) : '—'],
-      ['PE ratio (TTM)', met ? num(met.pe) : '—'],
-      ['EPS (TTM)', met ? num(met.eps) : '—'],
-      ['Earnings date', '—'],
-      ['Forward dividend & yield', met && met.divYield ? num(met.divYield) + '%' : '—'],
-      ['Ex-dividend date', '—'],
-      ['1y target est', '—'],
+      ['Market cap', marketCapVal],
+      ['Beta', beta],
+      ['PE ratio (TTM)', peRatio],
+      ['EPS (TTM)', eps],
+      ['Earnings date', earningsDate],
+      ['Forward dividend & yield', divYield],
+      ['Ex-dividend date', exDivDate],
+      ['1y target est', target],
     ];
   }
 
@@ -94,7 +143,23 @@
     // Indices/FX/commodities (^GSPC, NZDUSD=X, GC=F, DX-Y.NYB) aren't holdings,
     // whether opened from the ticker strip or found via search.
     const isIndex = opts.isIndex || /(\^|=X$|=F$|\.NYB$)/.test(sym);
+    const memberTag = isIndex ? INDEX_MEMBER_TAG[sym] : null;
     const meta = (window.Market && Market.get(sym)) || { s: sym, n: opts.name || '', tags: [] };
+
+    // "Research & Projections" doesn't apply to an index — no per-company
+    // earnings/revenue to project — so for an index with real constituents
+    // (see INDEX_MEMBER_TAG) that same nav slot is relabelled "Stocks" and
+    // shows its member list instead. Every other symbol (and indices without
+    // a constituents source, e.g. Gold) keeps the normal Research tab.
+    const rpBtn = document.querySelector('.sp-nav-item[data-tab="research"], .sp-nav-item[data-tab="stocks"]');
+    if (rpBtn) {
+      rpBtn.textContent = memberTag ? 'Stocks' : 'Research & Projections';
+      rpBtn.dataset.tab = memberTag ? 'stocks' : 'research';
+    }
+    if (memberTag && window.Market) {
+      if (!stocksInst) stocksInst = Market.mount($('#sp-stocks-block'), { fixedTag: memberTag });
+      else stocksInst.setTag(memberTag);
+    }
 
     if (window.ConnectorsPage) ConnectorsPage.close(); // one page at a time
     if (window.HomePage) HomePage.close();
@@ -112,9 +177,12 @@
     const tab = opts.tab === 'research' ? 'research' : 'summary';
     document.querySelectorAll('.sp-nav-item[data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === tab));
     $('#sp-tab-summary').hidden = tab !== 'summary';
+    $('#sp-tab-news').hidden = true;
     $('#sp-tab-research').hidden = tab !== 'research';
+    $('#sp-tab-stocks').hidden = true;
     $('#sp-tab-financials').hidden = true;
     $('#sp-tab-analysis').hidden = true;
+    $('#sp-tab-statistics').hidden = true;
     if (tab === 'research') loadResearch();
 
     // Indices can't be added to holdings or favourited.
@@ -143,14 +211,41 @@
     loadChart(sym);
 
     try {
-      const r = await fetch('/api/stock/' + encodeURIComponent(sym));
+      // Statistics + Valuation history (Yahoo, same connectors the
+      // Statistics tab uses) fetched in parallel with the quick Finnhub-
+      // backed /api/stock call, so the Summary tab's stat cells aren't stuck
+      // at "—" for everything Finnhub's free tier doesn't cover — and so
+      // "PE ratio (TTM)" here agrees with the Statistics tab's Valuation
+      // measures table instead of showing a second, slightly different
+      // number (see statCells' trailingPE comment). Indices have no company
+      // financials, same as elsewhere (Bull widget, "Add to holdings"), so
+      // skip both for those.
+      const [r, statsRes, valRes] = await Promise.all([
+        fetch('/api/stock/' + encodeURIComponent(sym)),
+        isIndex ? Promise.resolve(null) : fetch('/api/statistics/' + encodeURIComponent(sym)).catch(() => null),
+        isIndex ? Promise.resolve(null) : fetch('/api/valuation/' + encodeURIComponent(sym)).catch(() => null),
+      ]);
       const d = await r.json();
       if (current !== sym) return; // user moved on
       const q = d.quote;
       const p = d.profile;
       lastPrice = q ? q.price : null;
+      lastPrevClose = q ? q.prevClose : null;
+      if (statsRes && statsRes.ok) {
+        try {
+          const sd = await statsRes.json();
+          if (current === sym) { statsData = sd.statistics; statsSymbol = sym; }
+        } catch {}
+      }
+      if (valRes && valRes.ok) {
+        try {
+          const vd = await valRes.json();
+          if (current === sym) { valuationData = vd.valuation; valuationSymbol = sym; }
+        } catch {}
+      }
       renderQuote(q);
-      $('#sp-stats').innerHTML = statCells(q, d.metrics, p ? p.marketCap : 0)
+      if (chartRange === '1D') drawChart(); // redraw now that prevClose is known, so the 1D tooltip anchors to it instead of the intraday series' own first bar
+      $('#sp-stats').innerHTML = statCells(q, d.metrics, p ? p.marketCap : 0, statsSymbol === sym ? statsData : null, valuationSymbol === sym ? valuationData : null)
         .map(([k, v]) => `<div class="sp-cell"><span class="sp-k">${k}</span><span class="sp-v">${v}</span></div>`)
         .join('');
       const bits = [meta.sec, p && p.industry, p && p.exchange].filter(Boolean);
@@ -175,6 +270,7 @@
   let chartRange = '1Y';
   let intradayPoints = null; // today's real 1-min bars from /api/intraday, only for the 1D range
   let intradaySymbol = null;
+  let intradayTz = null; // exchange's own timezone (e.g. "America/New_York"), so hover times read as the stock's trading-day clock, not the viewer's
   let hoverPts = []; // { ts, price, xf(0..1), yPix } for the current draw
   const CHART_H = 240;
 
@@ -213,11 +309,17 @@
     // Store point coords for hover lookup (xf = 0..1 across width; yPix in the
     // 240px-tall plot, so % positioning maps 1:1 vertically).
     hoverPts = pts.map(([ts, p]) => ({ ts, price: p, xf: (ts - t0) / spanT, yPix: y(p) }));
-    const up = pts[pts.length - 1][1] >= pts[0][1];
+    // 1D's % should match the big header figure (vs. yesterday's close), not
+    // just this intraday series' own first bar — a stock that gapped up (or
+    // down) hard at the open still shows that whole move here, instead of
+    // silently understating it to just the flat move *after* the gap (which
+    // is all pts[0] would capture, since Yahoo's first 1-minute bar already
+    // reflects the opening print, not the pre-market baseline).
+    const first = chartRange === '1D' && lastPrevClose ? lastPrevClose : pts[0][1];
+    const last = pts[pts.length - 1][1];
+    const up = last >= first;
     const col = up ? 'var(--up)' : 'var(--down)';
     const area = `M0 ${H} ` + d.replace(/^M/, 'L') + ` L${W} ${H} Z`;
-    const first = pts[0][1];
-    const last = pts[pts.length - 1][1];
     const chg = last - first;
     const pct = first ? (chg / first) * 100 : 0;
     const sign = chg >= 0 ? '+' : '−';
@@ -233,7 +335,7 @@
   // Hover crosshair + tooltip (like Yahoo). Attached once to the persistent
   // plot element; reads hoverPts from the latest draw.
   const fmtDate = (ts) => new Date(ts).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-  const fmtDateTime = (ts) => new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+  const fmtDateTime = (ts) => new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', ...(intradayTz ? { timeZone: intradayTz, timeZoneName: 'shortOffset' } : {}) });
   function onHover(e) {
     const plot = $('#sp-chart-plot');
     const cross = plot.querySelector('.sp-cross');
@@ -270,6 +372,7 @@
     chartPoints = [];
     intradayPoints = null; // new symbol — old symbol's intraday bars don't apply
     intradaySymbol = null;
+    intradayTz = null;
     $('#sp-chart-plot').innerHTML = '<div class="sp-chart-msg">Loading chart…</div>';
     try {
       const r = await fetch('/api/history/' + encodeURIComponent(sym));
@@ -291,7 +394,11 @@
       const d = await r.json();
       if (current !== sym) return;
       if (!r.ok) throw new Error(d.error || 'fetch failed');
-      intradayPoints = (d.points || []).sort((a, b) => a[0] - b[0]);
+      // Yahoo's 1-minute bars occasionally include a spurious near-zero
+      // print (e.g. around a halt) — a real security price is never <= 0, so
+      // drop those rather than let them draw a vertical spike to the axis.
+      intradayPoints = (d.points || []).filter(([, p]) => typeof p === 'number' && p > 0).sort((a, b) => a[0] - b[0]);
+      intradayTz = d.timezone || null;
       intradaySymbol = sym;
     } catch {
       intradayPoints = null; // drawChart's "not enough history" message covers this
@@ -347,10 +454,10 @@
   // and this in-page button stay in sync — see Nav/applyView in app.js.
   $('#sp-back').addEventListener('click', () => history.back());
 
-  // Section nav: only Summary, Research & Projections, Financials, and
-  // Analysis actually do anything yet (the rest are disabled placeholders).
-  // Research & Projections shows the same "Earnings trends" section as
-  // Analysis (same connector, same persisted/merged data — see
+  // Section nav: only Summary, News, Research & Projections, Financials,
+  // Analysis, and Statistics actually do anything yet (the rest are disabled
+  // placeholders). Research & Projections shows the same "Earnings trends"
+  // section as Analysis (same connector, same persisted/merged data — see
   // ensureAnalysisAndFinancials), just as its own standalone tab.
   document.querySelector('.sp-nav').addEventListener('click', (e) => {
     const btn = e.target.closest('.sp-nav-item[data-tab]');
@@ -358,13 +465,333 @@
     const tab = btn.dataset.tab;
     document.querySelectorAll('.sp-nav-item[data-tab]').forEach((b) => b.classList.toggle('active', b === btn));
     $('#sp-tab-summary').hidden = tab !== 'summary';
+    $('#sp-tab-news').hidden = tab !== 'news';
     $('#sp-tab-research').hidden = tab !== 'research';
+    $('#sp-tab-stocks').hidden = tab !== 'stocks';
     $('#sp-tab-financials').hidden = tab !== 'financials';
     $('#sp-tab-analysis').hidden = tab !== 'analysis';
+    $('#sp-tab-statistics').hidden = tab !== 'statistics';
     if (tab === 'financials') loadFinancials();
     if (tab === 'analysis') loadAnalysis();
     if (tab === 'research') loadResearch();
+    if (tab === 'news') loadNews();
+    if (tab === 'statistics') loadStatistics();
   });
+
+  // ── News tab ─────────────────────────────────────────────────────────────
+  // Deliberately NOT cached/merged like Financials/Analysis (see
+  // ensureAnalysisAndFinancials) — every open re-fetches from Yahoo and
+  // replaces whatever was shown before. No accumulated history, no disk
+  // persistence; just whatever Yahoo has right now, one set of 4 replacing
+  // the last — true for both News and Press releases. "All"/"News" show the
+  // same fetched stories (only one news source is wired up). "SEC filings"
+  // is a different kind of source (see loadSecFilings) — persisted/merged
+  // like Financials, since filings are permanent records.
+  $('#news-filter-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('.fin-tab[data-filter]');
+    if (!btn) return;
+    $('#news-filter-tabs').querySelectorAll('.fin-tab').forEach((b) => b.classList.toggle('active', b === btn));
+    if (btn.dataset.filter === 'secfilings') loadSecFilings();
+    else if (btn.dataset.filter === 'pressreleases') loadNews('pressreleases');
+    else if (btn.dataset.filter === 'news') loadNews('news');
+    else loadNews('all');
+  });
+  function fmtNewsTime(ts) {
+    if (!ts) return '';
+    const mins = Math.round((Date.now() - ts) / 60000);
+    if (mins < 60) return mins <= 1 ? 'just now' : mins + 'm ago';
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + 'h ago';
+    return Math.round(hours / 24) + 'd ago';
+  }
+  function renderNewsItems(items) {
+    return items
+      .map((n) => {
+        const chips = (n.relatedTickers || []).slice(0, 4).map((t) => `<span class="news-chip">${esc(t)}</span>`).join('');
+        const img = n.image ? `<img class="news-thumb" src="${esc(n.image)}" alt="" loading="lazy" />` : '<div class="news-thumb news-thumb-empty"></div>';
+        return `<a class="news-item" href="${esc(n.link)}" target="_blank" rel="noopener noreferrer">
+          ${img}
+          <div class="news-body">
+            <p class="news-title">${esc(n.title)}</p>
+            <p class="news-meta">${esc(n.publisher)}${n.time ? ' · ' + esc(fmtNewsTime(n.time)) : ''}</p>
+            ${chips ? `<div class="news-chips">${chips}</div>` : ''}
+          </div>
+        </a>`;
+      })
+      .join('');
+  }
+  // Alternates the two lists news/press/news/press/... rather than just
+  // concatenating them, so "All" doesn't read as "4 news then 4 releases".
+  function interleave(a, b) {
+    const out = [];
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      if (a[i]) out.push(a[i]);
+      if (b[i]) out.push(b[i]);
+    }
+    return out;
+  }
+  // kind: 'all' (default, both sources interleaved 8 total), 'news', or
+  // 'pressreleases' — same shape of data, same un-cached/un-merged
+  // behaviour, just a different endpoint/filter server-side.
+  async function loadNews(kind = 'all') {
+    const wrap = $('#news-content');
+    const sym = current;
+    const noun = kind === 'pressreleases' ? 'press releases' : kind === 'news' ? 'news' : 'news or press releases';
+    wrap.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      let items;
+      if (kind === 'all') {
+        const [nr, pr] = await Promise.all([
+          fetch('/api/news/' + encodeURIComponent(sym)).then((r) => r.json()),
+          fetch('/api/pressreleases/' + encodeURIComponent(sym)).then((r) => r.json()),
+        ]);
+        if (current !== sym) return; // user moved on
+        items = interleave(nr.news || [], pr.news || []);
+      } else {
+        const endpoint = kind === 'pressreleases' ? '/api/pressreleases/' : '/api/news/';
+        const r = await fetch(endpoint + encodeURIComponent(sym));
+        const d = await r.json();
+        if (current !== sym) return; // user moved on
+        if (!r.ok) throw new Error(d.error || 'fetch failed');
+        items = d.news || [];
+      }
+      if (!items.length) { wrap.innerHTML = `<p class="muted">No ${noun} found.</p>`; return; }
+      wrap.innerHTML = renderNewsItems(items);
+    } catch (e) {
+      if (current !== sym) return;
+      wrap.innerHTML = `<p class="muted">Could not load ${noun}${e.message ? ' — ' + esc(e.message) : ''}.</p>`;
+    }
+  }
+
+  // Every SEC filing Yahoo has for this stock (10-K, 10-Q, 8-K, etc.) — same
+  // connector as Financials/Analysis (server/yahoo-financials.js), persisted
+  // and merged, so this list only ever grows even if a later fetch's page of
+  // results doesn't happen to include an older filing again.
+  function fmtFilingDate(d) {
+    if (!d) return '';
+    const dt = new Date(d);
+    return isNaN(dt) ? d : dt.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+  async function loadSecFilings() {
+    const wrap = $('#news-content');
+    const sym = current;
+    wrap.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const r = await fetch('/api/secfilings/' + encodeURIComponent(sym));
+      const d = await r.json();
+      if (current !== sym) return; // user moved on
+      if (!r.ok) throw new Error(d.error || 'fetch failed');
+      const filings = [...(d.secFilings?.filings || [])].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      if (!filings.length) { wrap.innerHTML = '<p class="muted">No SEC filings found.</p>'; return; }
+      wrap.innerHTML = filings
+        .map((f) => `<a class="news-item filing-item" href="${esc(f.edgarUrl)}" target="_blank" rel="noopener noreferrer">
+          <span class="filing-type">${esc(f.type)}</span>
+          <div class="news-body">
+            <p class="news-title">${esc(f.title)}</p>
+            <p class="news-meta">${esc(fmtFilingDate(f.date))}</p>
+          </div>
+        </a>`)
+        .join('');
+    } catch (e) {
+      if (current !== sym) return;
+      wrap.innerHTML = `<p class="muted">Could not load SEC filings${e.message ? ' — ' + esc(e.message) : ''}.</p>`;
+    }
+  }
+
+  // ── Statistics tab ───────────────────────────────────────────────────────
+  // Valuation Measures / Financial Highlights / Trading Information — same
+  // connector as Financials/Analysis/SEC filings (server/yahoo-financials.js,
+  // see getStatistics), same 24h on-demand cache, same fortnightly background
+  // sweep (server/financials-sweep.js). Every field is a live snapshot, not a
+  // history — so unlike Financials there's nothing to merge, just whatever
+  // Yahoo last reported.
+  let statsData = null;
+  let statsSymbol = null;
+  // Historical Valuation measures (Current + past quarters) — separate
+  // connector/endpoint from statsData above (see getValuationHistory in
+  // server/yahoo-financials.js), since the quarterly history is persisted/
+  // merged like Financials while the rest of Statistics is a plain snapshot.
+  let valuationData = null;
+  let valuationSymbol = null;
+
+  function fmtStatNum(n, decimals = 2) {
+    if (n == null) return '—';
+    const abs = Math.abs(n);
+    const sign = n < 0 ? '-' : '';
+    if (abs >= 1e12) return sign + (abs / 1e12).toFixed(decimals) + 'T';
+    if (abs >= 1e9) return sign + (abs / 1e9).toFixed(decimals) + 'B';
+    if (abs >= 1e6) return sign + (abs / 1e6).toFixed(decimals) + 'M';
+    if (abs >= 1e3) return sign + (abs / 1e3).toFixed(decimals) + 'K';
+    return sign + abs.toFixed(decimals);
+  }
+  function fmtStatPct(n) { return n == null ? '—' : (n * 100).toFixed(2) + '%'; }
+  function fmtStatRatio(n) { return n == null ? '—' : Number(n).toFixed(2); }
+  function fmtStatDate(epochSeconds) {
+    if (!epochSeconds) return '—';
+    const d = new Date(epochSeconds * 1000);
+    return isNaN(d) ? '—' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+  const fmtStatDollar = (n, d = 2) => (n == null ? '—' : '$' + Number(n).toFixed(d));
+  // A plain key/value table (no sub-header rows) — used for Valuation
+  // measures, which Yahoo shows as one flat table.
+  function statTableHtml(title, rows) {
+    const body = rows
+      .filter(([, v]) => v != null && v !== '—')
+      .map(([label, v]) => `<tr><td>${esc(label)}</td><td class="num">${v}</td></tr>`)
+      .join('');
+    if (!body) return '';
+    return `<div class="table-wrap an-section stat-table"><h3>${esc(title)}</h3><div class="table-scroll"><table><tbody>${body}</tbody></table></div></div>`;
+  }
+  // Financial highlights / Trading information are each a stack of grouped
+  // sub-sections (Profitability, Balance sheet, Share statistics, etc.) — a
+  // group is skipped entirely if every one of its rows came back empty,
+  // rather than rendering an empty sub-header.
+  function statGroupsHtml(title, groups) {
+    const body = groups
+      .map(([groupLabel, rows]) => {
+        const filtered = rows.filter(([, v]) => v != null && v !== '—');
+        if (!filtered.length) return '';
+        const trs = filtered.map(([label, v]) => `<tr><td>${esc(label)}</td><td class="num">${v}</td></tr>`).join('');
+        return `<h4 class="stat-group-h">${esc(groupLabel)}</h4><table><tbody>${trs}</tbody></table>`;
+      })
+      .join('');
+    if (!body) return '';
+    return `<div class="table-wrap an-section stat-groups"><h3>${esc(title)}</h3>${body}</div>`;
+  }
+  // Row order/labels match Yahoo's own Valuation measures table; key must
+  // match the metric name getValuationHistory's VALUATION_METRICS uses
+  // server-side (server/yahoo-financials.js), since that's the row.key/
+  // current{} key this reads. 'num' formats with a B/M/T suffix (market
+  // cap, enterprise value), 'ratio' as a plain 2-decimal number.
+  const VALUATION_ROWS = [
+    ['Market cap', 'MarketCap', 'num'], ['Enterprise value', 'EnterpriseValue', 'num'],
+    ['Trailing P/E', 'PeRatio', 'ratio'], ['Forward P/E', 'ForwardPeRatio', 'ratio'],
+    ['PEG ratio (5-yr expected)', 'PegRatio', 'ratio'], ['Price/sales', 'PsRatio', 'ratio'],
+    ['Price/book', 'PbRatio', 'ratio'], ['Enterprise value/revenue', 'EnterprisesValueRevenueRatio', 'ratio'],
+    ['Enterprise value/EBITDA', 'EnterprisesValueEBITDARatio', 'ratio'],
+  ];
+  function fmtHeaderDate(iso) {
+    const [y, m, d] = String(iso).split('-');
+    return y && m && d ? `${d}/${m}/${y}` : iso;
+  }
+  // "Current" (a live snapshot) plus up to 5 past quarter-end columns,
+  // newest first — matching Yahoo's own Valuation measures layout exactly.
+  function valuationTableHtml(valuation) {
+    if (!valuation) return '';
+    const hist = valuation.history;
+    const dates = hist && hist.dates ? [...hist.dates].sort().reverse().slice(0, 5) : [];
+    const rowsByKey = new Map((hist?.rows || []).map((r) => [r.key, r]));
+    const dateIdx = hist ? new Map(hist.dates.map((d, i) => [d, i])) : new Map();
+    const fmtVal = (kind, v) => (kind === 'num' ? fmtStatNum(v) : fmtStatRatio(v));
+    const headCells = ['Current', ...dates.map(fmtHeaderDate)].map((h) => `<th class="num">${esc(h)}</th>`).join('');
+    const bodyRows = VALUATION_ROWS
+      .map(([label, key, kind]) => {
+        const currentVal = valuation.current ? valuation.current[key] : null;
+        const histRow = rowsByKey.get(key);
+        const cells = dates
+          .map((d) => {
+            const idx = dateIdx.get(d);
+            const v = histRow && idx != null ? histRow.values[idx] : null;
+            return `<td class="num">${fmtVal(kind, v)}</td>`;
+          })
+          .join('');
+        return `<tr><td>${esc(label)}</td><td class="num">${fmtVal(kind, currentVal)}</td>${cells}</tr>`;
+      })
+      .join('');
+    return `<div class="table-wrap an-section stat-table"><h3>Valuation measures</h3><div class="table-scroll"><table><thead><tr><th></th>${headCells}</tr></thead><tbody>${bodyRows}</tbody></table></div></div>`;
+  }
+  function renderStatistics() {
+    const wrap = $('#statistics-content');
+    const s = statsData;
+    if (!s) { wrap.innerHTML = '<p class="muted">No statistics available.</p>'; return; }
+    const fh = s.financialHighlights || {};
+    const ti = s.tradingInformation || {};
+    const valuationTable = valuationTableHtml(valuationData);
+    const financialHighlights = statGroupsHtml('Financial highlights', [
+      ['Fiscal year', [
+        ['Fiscal year ends', fmtStatDate(fh.fiscalYearEnds)], ['Most-recent quarter (mrq)', fmtStatDate(fh.mostRecentQuarter)],
+      ]],
+      ['Profitability', [
+        ['Profit margin', fmtStatPct(fh.profitMargins)], ['Operating margin (ttm)', fmtStatPct(fh.operatingMargins)],
+      ]],
+      ['Management effectiveness', [
+        ['Return on assets (ttm)', fmtStatPct(fh.returnOnAssets)], ['Return on equity (ttm)', fmtStatPct(fh.returnOnEquity)],
+      ]],
+      ['Income statement', [
+        ['Revenue (ttm)', fmtStatNum(fh.totalRevenue)], ['Revenue per share (ttm)', fmtStatRatio(fh.revenuePerShare)],
+        ['Quarterly revenue growth (yoy)', fmtStatPct(fh.revenueGrowth)], ['Gross profit (ttm)', fmtStatNum(fh.grossProfits)],
+        ['EBITDA', fmtStatNum(fh.ebitda)], ['Net income avi to common (ttm)', fmtStatNum(fh.netIncomeToCommon)],
+        ['Diluted EPS (ttm)', fmtStatDollar(fh.dilutedEps)], ['Quarterly earnings growth (yoy)', fmtStatPct(fh.earningsGrowth)],
+      ]],
+      ['Balance sheet', [
+        ['Total cash (mrq)', fmtStatNum(fh.totalCash)], ['Total cash per share (mrq)', fmtStatDollar(fh.totalCashPerShare)],
+        ['Total debt (mrq)', fmtStatNum(fh.totalDebt)], ['Total debt/equity (mrq)', fmtStatRatio(fh.debtToEquity)],
+        ['Current ratio (mrq)', fmtStatRatio(fh.currentRatio)], ['Book value per share (mrq)', fmtStatDollar(fh.bookValuePerShare)],
+      ]],
+      ['Cash flow statement', [
+        ['Operating cash flow (ttm)', fmtStatNum(fh.operatingCashflow)], ['Levered free cash flow (ttm)', fmtStatNum(fh.freeCashflow)],
+      ]],
+    ]);
+    const tradingInformation = statGroupsHtml('Trading information', [
+      ['Stock price history', [
+        ['Beta (5Y monthly)', fmtStatRatio(ti.beta)], ['52-week change', fmtStatPct(ti.fiftyTwoWeekChange)],
+        ['S&P 500 52-week change', fmtStatPct(ti.sp500FiftyTwoWeekChange)],
+        ['52-week high', ti.fiftyTwoWeekHigh != null ? money(ti.fiftyTwoWeekHigh) : '—'],
+        ['52-week low', ti.fiftyTwoWeekLow != null ? money(ti.fiftyTwoWeekLow) : '—'],
+        ['50-day moving average', ti.fiftyDayAverage != null ? money(ti.fiftyDayAverage) : '—'],
+        ['200-day moving average', ti.twoHundredDayAverage != null ? money(ti.twoHundredDayAverage) : '—'],
+      ]],
+      ['Share statistics', [
+        ['Avg vol (3-month)', fmtStatNum(ti.averageVolume3Month, 2)], ['Avg vol (10-day)', fmtStatNum(ti.averageVolume10Day, 2)],
+        ['Shares outstanding', fmtStatNum(ti.sharesOutstanding, 2)], ['Implied shares outstanding', fmtStatNum(ti.impliedSharesOutstanding, 2)],
+        ['Float', fmtStatNum(ti.floatShares, 2)],
+        ['% held by insiders', fmtStatPct(ti.heldPercentInsiders)], ['% held by institutions', fmtStatPct(ti.heldPercentInstitutions)],
+        [`Shares short${ti.dateShortInterest ? ' (' + fmtStatDate(ti.dateShortInterest) + ')' : ''}`, fmtStatNum(ti.sharesShort, 2)],
+        [`Short ratio${ti.dateShortInterest ? ' (' + fmtStatDate(ti.dateShortInterest) + ')' : ''}`, fmtStatRatio(ti.shortRatio)],
+        [`Short % of float${ti.dateShortInterest ? ' (' + fmtStatDate(ti.dateShortInterest) + ')' : ''}`, fmtStatPct(ti.shortPercentOfFloat)],
+        [`Short % of shares outstanding${ti.dateShortInterest ? ' (' + fmtStatDate(ti.dateShortInterest) + ')' : ''}`, fmtStatPct(ti.shortPercentOfSharesOutstanding)],
+        ['Shares short (prior month)', fmtStatNum(ti.sharesShortPriorMonth, 2)],
+      ]],
+      ['Dividends & splits', [
+        ['Forward annual dividend rate', fmtStatDollar(ti.dividendRate)], ['Forward annual dividend yield', fmtStatPct(ti.dividendYield)],
+        ['Trailing annual dividend rate', fmtStatDollar(ti.trailingAnnualDividendRate)], ['Trailing annual dividend yield', fmtStatPct(ti.trailingAnnualDividendYield)],
+        ['5-year average dividend yield', fmtStatPct(ti.fiveYearAvgDividendYield)], ['Payout ratio', fmtStatPct(ti.payoutRatio)],
+        ['Dividend date', fmtStatDate(ti.dividendDate)], ['Ex-dividend date', fmtStatDate(ti.exDividendDate)],
+        ['Last split factor', ti.lastSplitFactor || '—'], ['Last split date', fmtStatDate(ti.lastSplitDate)],
+      ]],
+    ]);
+    const html = valuationTable + (financialHighlights || tradingInformation
+      ? `<div class="stat-two-col">${financialHighlights}${tradingInformation}</div>`
+      : '');
+    wrap.innerHTML = html || '<p class="muted">No statistics available.</p>';
+  }
+  async function loadStatistics() {
+    const wrap = $('#statistics-content');
+    const sym = current;
+    if (statsSymbol === sym && statsData && valuationSymbol === sym && valuationData) return renderStatistics();
+    wrap.innerHTML = '<p class="muted">Loading…</p>';
+    try {
+      const [statsRes, valRes] = await Promise.all([
+        fetch('/api/statistics/' + encodeURIComponent(sym)),
+        fetch('/api/valuation/' + encodeURIComponent(sym)),
+      ]);
+      if (current !== sym) return; // user moved on
+      const statsD = await statsRes.json();
+      if (!statsRes.ok) throw new Error(statsD.error || 'fetch failed');
+      statsData = statsD.statistics;
+      statsSymbol = sym;
+      // Valuation history failing shouldn't block the rest of Statistics —
+      // just falls back to no historical table if it errors.
+      try {
+        const valD = await valRes.json();
+        if (valRes.ok) { valuationData = valD.valuation; valuationSymbol = sym; }
+      } catch {}
+      renderStatistics();
+    } catch (e) {
+      if (current !== sym) return;
+      wrap.innerHTML = `<p class="muted">Could not load statistics${e.message ? ' — ' + esc(e.message) : ''}.</p>`;
+    }
+  }
 
   // ── Financials tab ───────────────────────────────────────────────────────
   // Income statement / balance sheet / cash flow, annual or quarterly — all
@@ -402,6 +829,22 @@
     }
   }
 
+  // TTM (trailing twelve months) = the most recent 4 reported quarters
+  // summed — only meaningful for flow statements (income, cash flow), not
+  // balance sheet (a point-in-time snapshot has no "last 4 quarters added
+  // up" reading). Only shown alongside the Annual view, same as Yahoo's own
+  // financials page. A row needs all 4 recent quarters present to sum;
+  // otherwise it's left blank rather than silently understating the total.
+  function computeTTM(quarterlyTable) {
+    if (!quarterlyTable || quarterlyTable.dates.length < 4) return null;
+    const lastFour = quarterlyTable.dates.length - 4;
+    const values = {};
+    for (const r of quarterlyTable.rows) {
+      const slice = r.values.slice(lastFour);
+      values[r.key] = slice.some((v) => v == null) ? null : slice.reduce((a, b) => a + b, 0);
+    }
+    return values;
+  }
   function renderFinTable() {
     const wrap = $('#fin-table-wrap');
     const table = finData && finData[finStatement] && finData[finStatement][finPeriod];
@@ -411,10 +854,28 @@
     }
     // Newest period first, matching how Yahoo's own financials page reads.
     const order = table.dates.map((_, i) => i).reverse();
-    const quarterOf = (i) => (table.quarters && table.quarters[i]) || '';
-    const head = '<th>Breakdown</th>' + order.map((i) => `<th>${esc(quarterOf(i))}<br><span class="fin-date">${esc(table.dates[i])}</span></th>`).join('');
+    // table.quarters is always a "Q# YYYY" label (see quarterLabel in
+    // server/yahoo-financials.js) even for the Annual table, since it's
+    // derived from the fiscal-year-END date, which naturally falls in some
+    // quarter — reads as if a full year's figures were only a quarter's
+    // worth. Annual columns show just the year instead; Quarterly keeps the
+    // real "Q# YYYY" label.
+    const periodOf = (i) => {
+      if (finPeriod === 'annual') {
+        const y = new Date(table.dates[i]).getUTCFullYear();
+        return isNaN(y) ? '' : 'FY' + y;
+      }
+      return (table.quarters && table.quarters[i]) || '';
+    };
+    const showTTM = finPeriod === 'annual' && (finStatement === 'income' || finStatement === 'cashflow');
+    const ttm = showTTM ? computeTTM(finData[finStatement].quarterly) : null;
+    const ttmHead = ttm ? '<th>TTM</th>' : '';
+    const head = '<th>Breakdown</th>' + ttmHead + order.map((i) => `<th>${esc(periodOf(i))}<br><span class="fin-date">${esc(table.dates[i])}</span></th>`).join('');
     const rows = table.rows
-      .map((r) => `<tr><td>${esc(r.label)}</td>${order.map((i) => `<td title="${r.values[i] != null ? r.values[i].toLocaleString() : ''}">${fmtFinNum(r.values[i])}</td>`).join('')}</tr>`)
+      .map((r) => {
+        const ttmCell = ttm ? `<td title="${ttm[r.key] != null ? ttm[r.key].toLocaleString() : ''}">${fmtFinNum(ttm[r.key])}</td>` : '';
+        return `<tr><td>${esc(r.label)}</td>${ttmCell}${order.map((i) => `<td title="${r.values[i] != null ? r.values[i].toLocaleString() : ''}">${fmtFinNum(r.values[i])}</td>`).join('')}</tr>`;
+      })
       .join('');
     wrap.innerHTML = `<table><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table>`;
   }
@@ -512,7 +973,13 @@
 
   let rpChartPeriod = 'quarterly';
   async function loadResearch() {
-    const wrap = $('#rp-content');
+    const wrap = $('#rp-content-top');
+    // Bull case calculator (app.js) — a single shared widget moved in here
+    // (below the projections above) rather than a separate copy per page.
+    // Indices (e.g. ^GSPC) have no company financials, so it's skipped for
+    // those the same way "Add to holdings" and the favourite star are.
+    const isIndexSym = /(\^|=X$|=F$|\.NYB$)/.test(current);
+    if (window.BullWidget && !isIndexSym) BullWidget.attachTo('#sp-bull-anchor', '#sp-bull-chart-anchor', current);
     if (anSymbol === current && anData) return renderResearchTab();
     wrap.innerHTML = '<p class="muted">Loading…</p>';
     try {
@@ -523,14 +990,22 @@
     }
   }
   function renderResearchTab() {
-    const wrap = $('#rp-content');
-    if (!anData) { wrap.innerHTML = '<p class="muted">No projections data available.</p>'; return; }
+    const top = $('#rp-content-top');
+    const bottom = $('#rp-content-bottom');
+    if (!anData) { top.innerHTML = '<p class="muted">No projections data available.</p>'; bottom.innerHTML = ''; return; }
     const revenuePeriods = rpChartPeriod === 'annual' ? ['0y', '+1y'] : ['0q', '+1q'];
-    wrap.innerHTML = earningsTrendsHtml('rp', rpChartPeriod) + allTablesHtml('Revenue & Projections', revenuePeriods, rpChartPeriod);
+    // The same two charts shown at the top of Analyst projections (analyst
+    // estimates, not the custom-linked Research chart below), pinned to the
+    // top here too — shares this tab's own period toggle further down. The
+    // Bull case's own "Projected share price range" chart sits between this
+    // top block and the table below (see #sp-bull-chart-anchor in index.html
+    // — physically relocated there by BullWidget.attachTo, not rendered here).
+    top.innerHTML = earningsChartsRowHtml(rpChartPeriod, true) + earningsTrendsHtml('rp', rpChartPeriod, false);
+    bottom.innerHTML = allTablesHtml('Revenue & Projections', revenuePeriods, rpChartPeriod, false, false, false, false);
     wireEarningsTrendsToggle('rp', () => rpChartPeriod, (v) => { rpChartPeriod = v; }, renderResearchTab);
     // Fires on blur/Enter (not every keystroke), so re-rendering the whole
     // table on change doesn't fight you mid-type.
-    wrap.querySelectorAll('.rev-custom-input').forEach((inp) => {
+    bottom.querySelectorAll('.rev-custom-input').forEach((inp) => {
       inp.addEventListener('change', () => {
         const inputs = getCustomRevenue(current, rpChartPeriod);
         inputs[inp.dataset.field][Number(inp.dataset.idx)] = inp.value === '' ? null : Number(inp.value) * Number(inp.dataset.scale || 1);
@@ -758,26 +1233,17 @@
   // exact same anData/finData (same connector, same persisted/merged data on
   // disk — see server/yahoo-financials.js); idPrefix just keeps their two
   // toggle buttons' DOM ids from colliding since both panes can exist at once.
-  function earningsTrendsHtml(idPrefix, period) {
+  // Research tab's own chart (idPrefix 'rp') is linked to the Revenue &
+  // Projections table (real history + your custom columns, no analyst
+  // estimates); the Analysis tab's chart (and the copy pinned to the top of
+  // the Research tab — see loadResearch) uses analyst-estimate projections
+  // instead — deliberately different sources, picked via useAnalystSource.
+  function earningsChartsRowHtml(period, useAnalystSource) {
     const epsPts = period === 'annual' ? annualEpsPoints() : quarterlyEpsPoints();
-    // Research tab's chart is linked to the Revenue & Projections table
-    // (real history + your custom columns, no analyst estimates); the
-    // Analysis tab's chart keeps using analyst-estimate projections —
-    // deliberately different sources, per idPrefix.
-    const revChartHtml = idPrefix === 'rp'
-      ? renderResearchRevenueEarningsChart(period)
-      : renderRevenueEarningsChart(finData && finData.income && finData.income[period], period);
-    return `<div class="an-charts-head">
-      <div>
-        <h2 class="an-charts-title">Earnings trends</h2>
-        ${buildTargetsLine()}
-      </div>
-      <div class="fin-periods" id="${idPrefix}-period">
-        <button class="fin-tab${period === 'annual' ? ' active' : ''}" data-period="annual">Annual</button>
-        <button class="fin-tab${period === 'quarterly' ? ' active' : ''}" data-period="quarterly">Quarterly</button>
-      </div>
-    </div>
-    <div class="an-charts-row">
+    const revChartHtml = useAnalystSource
+      ? renderRevenueEarningsChart(finData && finData.income && finData.income[period], period)
+      : renderResearchRevenueEarningsChart(period);
+    return `<div class="an-charts-row">
       <div class="an-chart-card card">
         <h3>Earnings per share</h3>
         ${renderEpsChart(epsPts)}
@@ -787,6 +1253,26 @@
         ${revChartHtml}
       </div>
     </div>`;
+  }
+  function earningsTrendsHtml(idPrefix, period, showCharts = true) {
+    // The period toggle also drives the Revenue & Projections table below
+    // (see allTablesHtml), so it stays even where the charts themselves are
+    // hidden (the Research & Projections tab — see loadResearch).
+    const chartsRow = showCharts ? earningsChartsRowHtml(period, idPrefix !== 'rp') : '';
+    // Research & Projections doesn't want the "Earnings trends" title (it's
+    // redundant with the section it's already inside) — the Analysis tab
+    // still shows it since it's the top-level heading there.
+    return `<div class="an-charts-head">
+      <div>
+        ${idPrefix === 'rp' ? '' : '<h2 class="an-charts-title">Earnings trends</h2>'}
+        ${buildTargetsLine()}
+      </div>
+      <div class="fin-periods" id="${idPrefix}-period">
+        <button class="fin-tab${period === 'annual' ? ' active' : ''}" data-period="annual">Annual</button>
+        <button class="fin-tab${period === 'quarterly' ? ' active' : ''}" data-period="quarterly">Quarterly</button>
+      </div>
+    </div>
+    ${chartsRow}`;
   }
   function wireEarningsTrendsToggle(idPrefix, getPeriod, setPeriod, rerender) {
     $(`#${idPrefix}-period`).addEventListener('click', (e) => {
@@ -1006,8 +1492,8 @@
   // switches the revenue table to revenueProjectionsHtml (5 years of real
   // history, annual or quarterly resolution, + the projected periods)
   // instead of just the two projected columns.
-  function estimateTablesHtml(revenueTitle = 'Revenue estimate', revenuePeriods = PERIODS, historyPeriod = null) {
-    const revenueEstHtml = historyPeriod
+  function estimateTablesHtml(revenueTitle = 'Revenue estimate', revenuePeriods = PERIODS, historyPeriod = null, includeRevenueTable = true, includeEarningsEstimate = true) {
+    const revenueEstHtml = !includeRevenueTable ? '' : historyPeriod
       ? revenueProjectionsHtml(revenueTitle, historyPeriod)
       : estimateTableHtml(revenueTitle, [
       { label: 'No. of analysts', get: (e) => e.numberOfAnalysts ?? '—' },
@@ -1017,7 +1503,7 @@
       { label: 'Year ago sales', get: (e) => fmtFinNum(e.revenueYearAgo) },
       { label: 'Sales growth (year/est)', get: (e) => fmtPct2(e.revenueGrowth) },
     ], revenuePeriods);
-    const earningsEstHtml = estimateTableHtml('Earnings estimate', [
+    const earningsEstHtml = !includeEarningsEstimate ? '' : estimateTableHtml('Earnings estimate', [
       { label: 'No. of analysts', get: (e) => e.epsNumberOfAnalysts ?? '—' },
       { label: 'Avg. Estimate', get: (e) => fmtEps(e.epsEstimate) },
       { label: 'Low estimate', get: (e) => fmtEps(e.epsLow) },
@@ -1039,8 +1525,9 @@
   }
   // Every section below "Earnings trends" — same tables on the Analysis tab
   // and the Research & Projections tab, same underlying anData either way.
-  function allTablesHtml(revenueTitle, revenuePeriods, historyPeriod) {
-    return estimateTablesHtml(revenueTitle, revenuePeriods, historyPeriod) + earningsHistoryHtml() + recommendationTrendHtml();
+  // Recommendation trend (analyst buy/hold/sell counts) is Analysis-only.
+  function allTablesHtml(revenueTitle, revenuePeriods, historyPeriod, includeRecommendation = true, includeRevenueTable = true, includeEarningsEstimate = true, includeEarningsHistory = true) {
+    return estimateTablesHtml(revenueTitle, revenuePeriods, historyPeriod, includeRevenueTable, includeEarningsEstimate) + (includeEarningsHistory ? earningsHistoryHtml() : '') + (includeRecommendation ? recommendationTrendHtml() : '');
   }
 
   function renderAnalysis() {

@@ -71,7 +71,11 @@
 
   // Mount a single search block. Returns handles the shared loop calls to keep
   // it in sync. Each block has its own filter text and active tag.
-  function mountMarket(root) {
+  // opts.fixedTag pins the block to one index's members (e.g. the stock
+  // page's "Stocks" tab, mounted via Market.mount) — the tag chips stay
+  // hidden and can't be switched away from, unlike the free-roaming Home/
+  // portfolio lists.
+  function mountMarket(root, opts = {}) {
     const listEl = root.querySelector('.mkt-list');
     const searchEl = root.querySelector('.mkt-search');
     const filtersEl = root.querySelector('.mkt-filters');
@@ -79,7 +83,7 @@
     if (!listEl || !searchEl || !filtersEl) return null;
 
     let filter = '';
-    let activeTag = null; // null = All
+    let activeTag = opts.fixedTag || null; // null = All
     let searchTimer;
     const allowAdd = root.dataset.quickadd !== 'off'; // Home list has no quick-add
     if (!allowAdd) listEl.classList.add('no-add');
@@ -99,6 +103,14 @@
       filtersEl.innerHTML = chip('All', null, null) + tags.map((t) => chip(t, t, counts.get(t))).join('');
     }
 
+    // Inside a fixedTag block every row already shares that one tag, so
+    // showing it again on every line is just noise — the sector (where the
+    // source has one, e.g. S&P 500's GICS sector) is more useful there.
+    function metaChips(x) {
+      if (activeTag && x.sec) return `<span class="mtags"><span class="tag">${esc(x.sec)}</span></span>`;
+      return activeTag ? '' : tagChips(x);
+    }
+
     function renderList() {
       const all = filtered();
       const rows = all.slice(0, MAX_ROWS);
@@ -108,7 +120,7 @@
           const day = q ? q.day : null;
           return `<button class="mrow" data-sym="${esc(x.s)}">
             <span class="msym">${esc(x.s)}</span>
-            <span class="mname">${esc(x.n || '')}${tagChips(x)}</span>
+            <span class="mname">${esc(x.n || '')}${metaChips(x)}</span>
             ${allowAdd ? `<span class="mq-add" data-add="${esc(x.s)}" title="Quick add to this portfolio" role="button">+</span>` : ''}
             <span class="mprice" data-price="${esc(x.s)}">${q ? fmtPrice(x.s, q.price) : '—'}</span>
             <span class="mday ${day == null ? '' : sign(day)}" data-day="${esc(x.s)}">${day == null ? '' : fmtPct(day)}</span>
@@ -164,7 +176,14 @@
       if (row) openStock(row.dataset.sym);
     });
 
-    const inst = { renderFilters, renderList, refreshCells, setStatus: (t) => { if (statusEl) statusEl.textContent = t; } };
+    const inst = {
+      renderFilters, renderList, refreshCells,
+      setStatus: (t) => { if (statusEl) statusEl.textContent = t; },
+      // Re-pins a fixedTag block to a different index (the stock page's
+      // "Stocks" tab reuses one mounted block across every index visited,
+      // rather than re-mounting per symbol — see stock.js's show()).
+      setTag: (tag) => { activeTag = tag; filter = ''; searchEl.value = ''; renderList(); },
+    };
     instances.push(inst);
     return inst;
   }
@@ -274,6 +293,15 @@
       const f = String(text || '').toLowerCase().trim();
       if (!f) return [];
       return rankMatches(universe, f).slice(0, max);
+    },
+    // Mounts a market-block created after the initial page load (the index
+    // page's "Stocks" tab — see stock.js) and, unlike the startup path above,
+    // paints it immediately with whatever universe/quotes are already in
+    // memory instead of waiting for the next loadUniverse()/poll() tick.
+    mount(root, opts) {
+      const inst = mountMarket(root, opts);
+      if (inst && universe.length) { inst.renderFilters(); inst.renderList(); inst.refreshCells(); }
+      return inst;
     },
   };
 })();

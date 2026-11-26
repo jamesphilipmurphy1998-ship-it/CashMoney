@@ -541,9 +541,9 @@
       <div class="sp-layout">
         <nav class="sp-nav" aria-label="Stock sections">
           <button class="sp-nav-item active" data-tab="summary">Summary</button>
-          <button class="sp-nav-item" disabled title="Coming soon">News</button>
+          <button class="sp-nav-item" data-tab="news">News</button>
           <button class="sp-nav-item" disabled title="Coming soon">Chart</button>
-          <button class="sp-nav-item" disabled title="Coming soon">Statistics</button>
+          <button class="sp-nav-item" data-tab="statistics">Statistics</button>
           <button class="sp-nav-item" data-tab="research">Research &amp; Projections</button>
           <button class="sp-nav-item" disabled title="Coming soon">Historical data</button>
           <button class="sp-nav-item" disabled title="Coming soon">Profile</button>
@@ -598,9 +598,60 @@
             </div>
           </div>
 
+          <!-- Top 8 stories for this stock, fetched fresh from Yahoo every
+               time this tab is opened (see loadNews in stock.js) — no disk
+               persistence/merging like Financials/Analysis, just whatever
+               Yahoo has right now, one set replacing the last. SEC filings
+               is a different connector (see loadSecFilings) — persisted and
+               merged like Financials, since filings are permanent records. -->
+          <div id="sp-tab-news" hidden>
+            <!-- "All"/"News" both just show the same fetched stories (we
+                 only have the one Yahoo news source) — Press releases is
+                 separate Yahoo data we don't pull yet, so it's a disabled
+                 placeholder, same convention as the other "Coming soon" nav
+                 items. -->
+            <div class="news-filter-tabs" id="news-filter-tabs">
+              <button class="fin-tab active" data-filter="all">All</button>
+              <button class="fin-tab" data-filter="news">News</button>
+              <button class="fin-tab" data-filter="pressreleases">Press releases</button>
+              <button class="fin-tab" data-filter="secfilings">SEC filings</button>
+            </div>
+            <div id="news-content"><p class="muted">Loading…</p></div>
+          </div>
+
           <div id="sp-tab-research" hidden>
-            <div id="rp-content"><p class="muted">Loading…</p></div>
+            <div id="rp-content-top"><p class="muted">Loading…</p></div>
+            <!-- The Bull case widget's own "Projected share price range"
+                 chart (see #bull-chart-card in the Research page markup)
+                 gets physically relocated here — below the two earnings/
+                 revenue charts above, above the Revenue & Projections table
+                 below (see BullWidget.attachTo). -->
+            <div id="sp-bull-chart-anchor"></div>
+            <div id="rp-content-bottom"></div>
             <div class="an-tip" id="rp-tip" hidden></div>
+            <div id="sp-bull-anchor"></div>
+          </div>
+
+          <!-- Indices only: same nav slot as "Research & Projections" above,
+               relabelled "Stocks" — a searchable/sortable list of the index's
+               constituents (see indexMembers() in stock.js), reusing market.js's
+               mountMarket() for the same search/filter/live-price row UI as the
+               Home and portfolio "Market" lists. -->
+          <div id="sp-tab-stocks" hidden>
+            <div class="market-block" id="sp-stocks-block" data-quickadd="off">
+              <div class="mkt-status" id="sp-stocks-status"></div>
+              <input type="search" class="mkt-search" placeholder="Search this index's stocks — ticker or company" autocomplete="off" />
+              <div class="market-filters mkt-filters" hidden></div>
+              <div class="market-list mkt-list"></div>
+            </div>
+          </div>
+
+          <!-- Statistics: Valuation Measures / Financial Highlights / Trading
+               Information, fetched via the same connector as Financials/
+               Analysis/SEC filings (server/yahoo-financials.js), swept
+               fortnightly the same way too — see loadStatistics in stock.js. -->
+          <div id="sp-tab-statistics" hidden>
+            <div id="statistics-content"><p class="muted">Loading…</p></div>
           </div>
 
           <div id="sp-tab-financials" hidden>
