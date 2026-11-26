@@ -3709,6 +3709,20 @@ topSearch.addEventListener('input', () => {
   topTimer = setTimeout(() => renderTopResults(topSearch.value.trim()), 120);
 });
 topSearch.addEventListener('focus', () => renderTopResults(topSearch.value.trim()));
+// Enter opens the top result — the same stock a click on the first row would
+// open (Market.search's order is what the dropdown shows).
+topSearch.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  const text = topSearch.value.trim();
+  const top = text && window.Market ? Market.search(text)[0] : null;
+  if (!top) return;
+  e.preventDefault();
+  clearTimeout(topTimer);
+  topMenu.hidden = true;
+  topSearch.value = '';
+  topSearch.blur();
+  Market.openDetail(top.s);
+});
 document.addEventListener('click', (e) => {
   if (!e.target.closest('.top-search')) topMenu.hidden = true;
 });
