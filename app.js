@@ -114,7 +114,7 @@ function render() {
 let sharesiesRange = 'All';
 // Shared by every stored-history chart (Sharesies + the aggregate summary
 // below) — same windows the per-stock chart uses (see stock.js's RANGE_MS).
-const RANGE_MS = { '1M': 30 * 864e5, '6M': 182 * 864e5, '1Y': 365 * 864e5, All: Infinity };
+const RANGE_MS = { '5D': 5 * 864e5, '1M': 30 * 864e5, '6M': 182 * 864e5, '1Y': 365 * 864e5, All: Infinity };
 function rangeWindowStart(range) {
   if (range === 'YTD') return new Date(new Date().getFullYear(), 0, 1).getTime();
   const span = RANGE_MS[range] ?? Infinity;
@@ -127,12 +127,21 @@ function fmtNZD(n) {
 const fmtChartDateTime = (ts) => new Date(ts).toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
 
 // ---- Live 1D/5D value curve ----------------------------------------------
-// Unlike the longer ranges above (which replay stored history), 1D/5D are
-// computed live from each holding's own price series and summed — so they
-// work for ANY portfolio, including one with no stored history at all (a
-// plain user-created portfolio, not just aggregate/Sharesies-linked ones).
-// 1D uses today's real intraday minute bars; 5D windows the daily-close
-// history to the last 5 days (same split the per-stock chart uses).
+// Computed live from each holding's own price series and summed — so this
+// works for ANY portfolio, including one with no manually-recorded
+// summary_history at all (a plain user-created portfolio, not just
+// aggregate/Sharesies-linked ones). 1D uses today's real intraday minute
+// bars; every other range (5D through All) replays /api/history's daily
+// closes, which auto-backfill years of real Yahoo data the first time any
+// symbol is ever priced (see server/server.js's /api/history route) — so a
+// year-long chart doesn't require having actually opened the app daily for
+// a year, just having held these stocks and having them priced at least once.
+//
+// Two unavoidable approximations, since there's no buy/sell transaction log
+// to replay instead: (1) today's share count is applied across the whole
+// window, so a past buy/sell isn't reflected before it happened; (2) cash-
+// like positions (KiwiSaver, Sharesies Wallet/Save — see isCash) have no
+// market price at all, so they contribute today's value flatly throughout.
 async function computeLiveCurve(positions, range) {
   const real = positions.filter((p) => !isCash(p) && Number(p.shares) > 0);
   const bySymbol = new Map();
@@ -141,6 +150,7 @@ async function computeLiveCurve(positions, range) {
   const cashValue = positions.filter(isCash).reduce((s, p) => s + positionValue(p), 0);
   if (!symbols.length) return [];
 
+  const from = rangeWindowStart(range);
   const seriesArr = await Promise.all(symbols.map(async (sym) => {
     try {
       if (range === '1D') {
@@ -150,7 +160,6 @@ async function computeLiveCurve(positions, range) {
       }
       const r = await fetch('/api/history/' + encodeURIComponent(sym));
       const d = await r.json();
-      const from = Date.now() - 5 * 864e5;
       return (d.points || []).filter(([ts]) => ts >= from).sort((a, b) => a[0] - b[0]);
     } catch {
       return [];
@@ -392,21 +401,14 @@ function renderSummaryChart() {
   if (usesSharesies || !hasHoldings) { card.hidden = true; return; }
   card.hidden = false;
 
-  // The longer ranges need stored daily history (summary_history), which
-  // only the aggregate view has — a plain portfolio only gets live 1D/5D.
-  const isLiveRange = (r) => r === '1D' || r === '5D';
-  $('#summary-chart-ranges').querySelectorAll('.sp-range').forEach((b) => { b.hidden = !agg && !isLiveRange(b.dataset.range); });
-  if (!agg && !isLiveRange(summaryRange)) summaryRange = '1D';
+  // Every range is now computed live from each holding's own backfilled
+  // price history (see computeLiveCurve) — no longer gated to 1D/5D-only for
+  // a plain (non-aggregate) portfolio, since that computation never
+  // depended on the aggregate-only summary_history table to begin with.
+  $('#summary-chart-ranges').querySelectorAll('.sp-range').forEach((b) => { b.hidden = false; });
   $('#summary-chart-ranges').querySelectorAll('.sp-range').forEach((b) => b.classList.toggle('active', b.dataset.range === summaryRange));
-
-  if (summaryRange === '1D' || summaryRange === '5D') {
-    $('#summary-chart-synced').textContent = '';
-    drawLiveRangeChart('#summary-chart-plot', (h) => { summaryHoverPts = h; }, summaryRange, agg ? 'agg' : activePid);
-    return;
-  }
-  const last = summaryHistory[summaryHistory.length - 1];
-  $('#summary-chart-synced').textContent = last ? 'Last recorded ' + new Date(last.date).toLocaleDateString() : '';
-  drawSummaryChart(summaryHistory);
+  $('#summary-chart-synced').textContent = '';
+  drawLiveRangeChart('#summary-chart-plot', (h) => { summaryHoverPts = h; }, summaryRange, agg ? 'agg' : activePid);
 }
 $('#summary-chart-ranges').addEventListener('click', (e) => {
   const btn = e.target.closest('.sp-range');
@@ -415,24 +417,6 @@ $('#summary-chart-ranges').addEventListener('click', (e) => {
   renderSummaryChart();
 });
 
-function drawSummaryChart(history) {
-  const plot = $('#summary-chart-plot');
-  const from = rangeWindowStart(summaryRange);
-  const pts = history
-    .map((h) => ({ ts: new Date(h.date).getTime(), value: Currency.convert(Number(h.value) || 0, 'USD', Currency.display) }))
-    .filter(({ ts }) => !Number.isNaN(ts) && ts >= from)
-    .sort((a, b) => a.ts - b.ts);
-  if (!pts.length) {
-    summaryHoverPts = [];
-    plot.innerHTML = history.length
-      ? '<div class="sp-chart-msg">Not enough history for this range.</div>'
-      : '<div class="sp-chart-msg">Started today (day 0) — check back tomorrow to see it grow.</div>';
-    return;
-  }
-  const { svg, hoverPts } = buildValueChartSVG(pts);
-  summaryHoverPts = hoverPts;
-  plot.innerHTML = svg;
-}
 bindValueChartHover('#summary-chart-plot', () => summaryHoverPts, (best) => {
   const dateLabel = (summaryRange === '1D' || summaryRange === '5D') ? fmtChartDateTime(best.ts) : fmtSharesiesDate(best.ts);
   return `<b>${money(best.value)}</b><span>${dateLabel}</span>`;
