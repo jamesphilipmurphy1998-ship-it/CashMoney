@@ -22,6 +22,17 @@
       if (theme && theme !== 'system') document.documentElement.dataset.theme = theme;
       var accent = localStorage.getItem('cashmoney.accent');
       if (accent) document.documentElement.style.setProperty('--accent', accent);
+      // "Colour" mode's own background/surface picks (see the custom-colours
+      // panel, applied live by applyCustomColors() in app.js) — applied here
+      // too so there's no flash of the unpicked defaults.
+      if (theme === 'colour') {
+        try {
+          var custom = JSON.parse(localStorage.getItem('cashmoney.customColors') || '{}');
+          ['bg', 'surface'].forEach(function (k) {
+            if (custom[k]) document.documentElement.style.setProperty('--' + k, custom[k]);
+          });
+        } catch (e) {}
+      }
     })();
   </script>
 </head>
@@ -308,9 +319,22 @@
           <button type="button" class="theme-btn" data-theme="light">☀ Light</button>
           <button type="button" class="theme-btn" data-theme="dark">☾ Dark</button>
           <button type="button" class="theme-btn" data-theme="system">Auto</button>
+          <button type="button" class="theme-btn" data-theme="colour">🎨 Colour</button>
+        </div>
+        <!-- Only shown when "Colour" is the active theme — lets the user pick
+             the actual page background AND card surface colours themselves
+             (the same --bg/--surface Light/Dark set to fixed values). -->
+        <div class="custom-colours" id="custom-colours" hidden>
+          <p class="muted custom-colours-label">Background</p>
+          <input type="color" id="custom-color-bg" class="custom-color-input" aria-label="Background colour" />
+          <p class="muted custom-colours-label">Card surface</p>
+          <input type="color" id="custom-color-surface" class="custom-color-input" aria-label="Surface colour" />
         </div>
         <p class="muted accent-label">Accent colour</p>
-        <div class="accent-swatches" id="accent-swatches"></div>
+        <div class="accent-row">
+          <div class="accent-swatches" id="accent-swatches"></div>
+          <input type="color" id="accent-picker" class="accent-picker" aria-label="Custom accent colour" title="Pick a custom accent colour" />
+        </div>
       </div>
     </section>
 

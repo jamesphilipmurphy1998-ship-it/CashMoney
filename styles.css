@@ -59,6 +59,24 @@
   --down: #f09595;
   --down-bg: #3a1717;
 }
+/* "Colour" mode (Profile -> Appearance) — starts identical to light until the
+   user picks their own background/surface/text via the custom-colours panel,
+   at which point applyCustomColors() (app.js) sets those as inline properties
+   on :root, which override these defaults. */
+:root[data-theme='colour'] {
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #faf9f6;
+  --text: #1c1b19;
+  --muted: #6b6a64;
+  --faint: #9b9a93;
+  --border: #e6e4dd;
+  --border-strong: #d3d1c7;
+  --up: #0f6e56;
+  --up-bg: #e1f5ee;
+  --down: #a32d2d;
+  --down-bg: #fcebeb;
+}
 /* Accent tint auto-derives from whatever accent color is chosen (Profile ->
    Appearance) rather than being a separate hardcoded value per theme, so any
    accent works correctly against both light and dark surfaces. */
@@ -482,6 +500,24 @@ body.compound-open .pf-title.active, body.home-open .pf-title.active, body.stock
 .accent-swatches { display: flex; gap: 10px; }
 .accent-swatch { width: 30px; height: 30px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; padding: 0; }
 .accent-swatch.active { border-color: var(--text); }
+.accent-row { display: flex; align-items: center; gap: 14px; }
+/* Custom accent colour picker — free choice beyond the preset swatches
+   above, styled as a matching round swatch rather than the browser's
+   default rectangular colour-input chrome. */
+.accent-picker { width: 30px; height: 30px; border-radius: 50%; border: 2px dashed var(--border-strong); padding: 0; cursor: pointer; background: none; appearance: none; -webkit-appearance: none; }
+.accent-picker::-webkit-color-swatch-wrapper { padding: 2px; border-radius: 50%; }
+.accent-picker::-webkit-color-swatch { border: none; border-radius: 50%; }
+.accent-picker::-moz-color-swatch { border: none; border-radius: 50%; }
+/* "Colour" theme mode's own panel — only shown while that mode is active
+   (see renderAppearance in app.js). Lets the user pick the actual
+   background/surface/text colours themselves, same idea as the accent
+   picker above but driving the whole page's palette rather than one accent. */
+.custom-colours { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+.custom-colours-label { margin: 0; }
+.custom-color-input { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--border-strong); padding: 0; cursor: pointer; background: none; appearance: none; -webkit-appearance: none; }
+.custom-color-input::-webkit-color-swatch-wrapper { padding: 2px; border-radius: 50%; }
+.custom-color-input::-webkit-color-swatch { border: none; border-radius: 50%; }
+.custom-color-input::-moz-color-swatch { border: none; border-radius: 50%; }
 .page-title { font-size: 24px; font-weight: 600; margin: 8px 0 10px; }
 
 /* Compound Calculator page. */

@@ -2136,16 +2136,43 @@ $('#profile-avatar-input').addEventListener('change', async (e) => {
 // index.html's <head> (avoids a flash of the wrong theme on load); this is
 // just the Profile page UI for changing and persisting them.
 const ACCENT_PRESETS = ['#185fa5', '#1d9e75', '#7f77dd', '#d85a30', '#c23b6b', '#0f9aa8'];
+// "Colour" theme mode's own customizable variables — the actual page
+// background and card surface colour, same idea as Light/Dark picking a
+// fixed value for each, except the user picks them directly. Accent is
+// handled separately (applyAccent) since it applies the same way across
+// every mode.
+const CUSTOM_COLOR_KEYS = ['bg', 'surface'];
+function loadCustomColors() {
+  try { return JSON.parse(localStorage.getItem('cashmoney.customColors') || '{}'); } catch { return {}; }
+}
 
 function applyTheme(mode) {
   if (mode === 'system') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = mode;
   localStorage.setItem('cashmoney.theme', mode);
+  if (mode === 'colour') {
+    // Re-apply whatever was last picked (may be nothing yet, if Colour mode
+    // has never been used before — the :root[data-theme='colour'] CSS
+    // defaults cover that case).
+    const saved = loadCustomColors();
+    CUSTOM_COLOR_KEYS.forEach((k) => { if (saved[k]) document.documentElement.style.setProperty('--' + k, saved[k]); });
+  } else {
+    // Colour mode's inline overrides would otherwise keep beating Light/
+    // Dark's own stylesheet values (inline style always wins over a
+    // stylesheet rule), so leaving Colour mode would still look like
+    // whatever was last picked instead of actually switching — clear them.
+    CUSTOM_COLOR_KEYS.forEach((k) => document.documentElement.style.removeProperty('--' + k));
+  }
   renderAppearance();
 }
 function applyAccent(color) {
   document.documentElement.style.setProperty('--accent', color);
   localStorage.setItem('cashmoney.accent', color);
+  renderAppearance();
+}
+function applyCustomColors(obj) {
+  CUSTOM_COLOR_KEYS.forEach((k) => { if (obj[k]) document.documentElement.style.setProperty('--' + k, obj[k]); });
+  localStorage.setItem('cashmoney.customColors', JSON.stringify(obj));
   renderAppearance();
 }
 function renderAppearance() {
@@ -2155,6 +2182,28 @@ function renderAppearance() {
   $('#accent-swatches').innerHTML = ACCENT_PRESETS
     .map((c) => `<button class="accent-swatch${c === accent ? ' active' : ''}" style="background:${c}" data-accent="${c}" aria-label="${c}"></button>`)
     .join('');
+  // Custom colour picker only accepts #rrggbb — keep it in sync with the
+  // current accent whenever it's one (a preset click can happen without the
+  // picker ever firing its own input event otherwise).
+  const picker = $('#accent-picker');
+  if (picker && /^#[0-9a-f]{6}$/i.test(accent)) picker.value = accent;
+
+  // Colour mode's own panel — hidden entirely unless that mode is active.
+  // Each input's value defaults to whatever's currently in effect (a saved
+  // pick, or the :root[data-theme='colour'] CSS default) rather than a blank
+  // swatch, so it reads as "this is your current background" from the start.
+  const panel = $('#custom-colours');
+  if (panel) {
+    panel.hidden = theme !== 'colour';
+    if (theme === 'colour') {
+      const custom = loadCustomColors();
+      const cs = getComputedStyle(document.documentElement);
+      CUSTOM_COLOR_KEYS.forEach((k) => {
+        const input = $(`#custom-color-${k}`);
+        if (input) input.value = custom[k] || cs.getPropertyValue('--' + k).trim();
+      });
+    }
+  }
 }
 $('#theme-toggle').addEventListener('click', (e) => {
   const btn = e.target.closest('.theme-btn');
@@ -2163,6 +2212,11 @@ $('#theme-toggle').addEventListener('click', (e) => {
 $('#accent-swatches').addEventListener('click', (e) => {
   const btn = e.target.closest('.accent-swatch');
   if (btn) applyAccent(btn.dataset.accent);
+});
+$('#accent-picker').addEventListener('input', (e) => applyAccent(e.target.value));
+CUSTOM_COLOR_KEYS.forEach((k) => {
+  const input = $(`#custom-color-${k}`);
+  if (input) input.addEventListener('input', (e) => { const obj = loadCustomColors(); obj[k] = e.target.value; applyCustomColors(obj); });
 });
 renderAppearance();
 // Live coverage table: per index — member count, membership source, and how
