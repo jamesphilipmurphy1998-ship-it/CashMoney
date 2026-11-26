@@ -52,6 +52,10 @@
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="m19.5 19.5-4.3-4.3"/></svg>
       <span>Research</span>
     </button>
+    <button class="rail-btn" id="rail-earnings" title="Earnings Calendar" aria-label="Earnings Calendar">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 9.5h16M8 3v3.5M16 3v3.5"/><circle cx="8.3" cy="14" r="1" fill="currentColor"/><circle cx="12" cy="14" r="1" fill="currentColor"/><circle cx="15.7" cy="14" r="1" fill="currentColor"/></svg>
+      <span>Earnings Calendar</span>
+    </button>
     <button class="rail-btn" id="rail-connectors" title="Connectors" aria-label="Connectors">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="m8 16 8-8m-5-1 1.5-1.5a3.5 3.5 0 0 1 5 5L17 16m-9 1-1.5 1.5a3.5 3.5 0 0 1-5-5L4 8"/></svg>
       <span>Connectors</span>
@@ -219,6 +223,29 @@
       <input type="search" class="mkt-search" placeholder="Search any stock — ticker or company, e.g. AAPL, nvidia" autocomplete="off" />
       <div class="market-filters mkt-filters"></div>
       <div class="market-list mkt-list"></div>
+    </section>
+
+    <!-- Earnings Calendar: upcoming earnings dates across S&P 500/Nasdaq
+         100/Dow 30, every holding, and every favourite (see
+         earnings-calendar.js). Hidden until opened from the left rail. -->
+    <section id="earnings-calendar-page" hidden>
+      <h1 class="page-title">Earnings Calendar</h1>
+      <p class="muted">Earnings dates for your holdings, favourites, and the S&amp;P 500, Nasdaq 100, and Dow 30.</p>
+      <div class="bull-ticker-wrap ec-search-wrap">
+        <input type="text" id="ec-search" class="bull-ticker-input ec-search-input" placeholder="Search a company or ticker, e.g. AAPL" autocomplete="off" />
+        <div class="bull-ticker-menu" id="ec-search-menu" hidden></div>
+      </div>
+      <p class="ec-search-result" id="ec-search-result" hidden></p>
+      <div class="ec-cal-head">
+        <button type="button" class="btn ec-cal-nav" id="ec-cal-prev" aria-label="Previous month">‹</button>
+        <h2 class="ec-cal-title" id="ec-cal-title"></h2>
+        <button type="button" class="btn ec-cal-nav" id="ec-cal-next" aria-label="Next month">›</button>
+        <button type="button" class="btn ec-cal-today" id="ec-cal-today">Today</button>
+      </div>
+      <div class="ec-cal-weekdays">
+        <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
+      </div>
+      <div class="ec-cal-grid" id="ec-cal-grid"></div>
     </section>
 
     <!-- Market home page. Hidden until opened from Home / the logo. -->
@@ -648,6 +675,7 @@
   <script src="ticker.js"></script>
   <script src="stock.js"></script>
   <script src="home.js"></script>
+  <script src="earnings-calendar.js"></script>
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
     const c = window.SUPABASE_CONFIG;

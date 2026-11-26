@@ -84,6 +84,7 @@
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.ProfilePage) ProfilePage.close();
     if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     document.body.classList.add('home-open');
     page.hidden = false;

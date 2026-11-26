@@ -1415,6 +1415,7 @@ const goHome = () => {
     if (window.ProfilePage) ProfilePage.close();
     if (window.HomePage) HomePage.close();
     if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
   }
 };
@@ -1433,6 +1434,7 @@ const ConnectorsPage = {
     if (window.StockPage) StockPage.close(); // one page at a time
     if (window.HomePage) HomePage.close();
     if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     document.body.classList.add('connectors-open');
     $('#connectors-page').hidden = false;
@@ -1769,6 +1771,9 @@ const ResearchPage = {
 };
 window.ResearchPage = ResearchPage;
 $('#rail-research').addEventListener('click', () => ResearchPage.show());
+// Earnings Calendar page lives in its own file (earnings-calendar.js) — see
+// window.EarningsCalendarPage there.
+$('#rail-earnings').addEventListener('click', () => { if (window.EarningsCalendarPage) EarningsCalendarPage.show(); });
 
 // ---- Research page: Bull case calculator ---------------------------------
 // A freeform valuation projection, not tied to any portfolio holding or
@@ -2001,6 +2006,7 @@ const CompoundPage = {
     if (window.HomePage) HomePage.close();
     if (window.ProfilePage) ProfilePage.close();
     if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     document.body.classList.add('compound-open');
     $('#compound-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2068,6 +2074,7 @@ const ProfilePage = {
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.HomePage) HomePage.close();
     if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     document.body.classList.add('profile-open');
     $('#profile-page').hidden = false;
@@ -2567,6 +2574,7 @@ pfTabs.addEventListener('click', async (e) => {
       if (window.ConnectorsPage) ConnectorsPage.close();
       if (window.ProfilePage) ProfilePage.close();
       if (window.ResearchPage) ResearchPage.close();
+      if (window.EarningsCalendarPage) EarningsCalendarPage.close();
       if (window.CompoundPage) CompoundPage.close();
     }
   }
