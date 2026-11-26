@@ -99,35 +99,56 @@ function rangeForGap(lastTs) {
   return '10y';
 }
 
+// A hole in the middle of the history (server off for weeks, then back on, so
+// "newest" is fresh but August..November is empty) shows up on charts as one
+// long straight line. Anything over this between consecutive points counts as
+// a hole worth filling — longer than any normal holiday weekend.
+const GAP_HOLE_MS = 6 * 864e5;
+const HOLE_LOOKBACK_MS = 2 * 365 * 864e5; // only repair the last couple of years
+
 async function ensureFresh(symbol, fetchDaily) {
   if (!isBackfilled(symbol)) return 0; // first-time seeding is backfill()'s job
   if (gapInflight.has(symbol)) return gapInflight.get(symbol); // collapse concurrent requests
   const now = Date.now();
   if (now - (gapCheckedAt.get(symbol) || 0) < GAP_RECHECK_MS) return 0;
-  const recent = read(symbol, 1);
-  if (!recent.length) return 0;
-  const newestTs = recent[0][0];
-  if (now - newestTs < GAP_STALE_MS) return 0;
+  const all = read(symbol, 1000000);
+  if (!all.length) return 0;
+  const newestTs = all[all.length - 1][0];
+
+  // Where does the missing stretch start? The earliest recent hole, else the
+  // newest point if it's gone stale.
+  let fromTs = null;
+  for (let i = 1; i < all.length; i++) {
+    if (all[i][0] < now - HOLE_LOOKBACK_MS) continue;
+    if (all[i][0] - all[i - 1][0] > GAP_HOLE_MS) { fromTs = all[i - 1][0]; break; }
+  }
+  if (fromTs == null && now - newestTs >= GAP_STALE_MS) fromTs = newestTs;
+  if (fromTs == null) return 0;
 
   const job = (async () => {
     try {
-      const fetched = await fetchDaily(rangeForGap(newestTs));
-      flush(); // buffered live points first, so the file stays in time order
-      const newest = read(symbol, 1)[0][0];
-      const lastDay = dayKey(newest);
+      const fetched = await fetchDaily(rangeForGap(fromTs));
+      flush(); // buffered live points first, so what we merge into is complete
+      const current = read(symbol, 1000000);
+      const haveDays = new Set(current.map(([ts]) => dayKey(ts)));
+      const fromDay = dayKey(fromTs);
       const today = dayKey(Date.now());
-      const byDay = new Map(); // last bar per missing day
+      const byDay = new Map(); // one bar per missing day
       for (const [ts, p] of fetched || []) {
         if (typeof ts !== 'number' || typeof p !== 'number') continue;
         const d = dayKey(ts);
-        if (d > lastDay && d < today) byDay.set(d, [ts, p]);
+        if (d > fromDay && d < today && !haveDays.has(d)) byDay.set(d, [ts, p]);
       }
-      const fresh = [...byDay.values()].sort((a, b) => a[0] - b[0]);
+      const fresh = [...byDay.values()];
       if (!fresh.length) return 0;
+      // Days land in the middle of the file, so rewrite it in time order
+      // (temp file + rename, so a crash can't leave a half-written history).
+      const merged = [...current, ...fresh].sort((x, y) => x[0] - y[0]);
       fs.mkdirSync(DIR, { recursive: true });
-      fs.appendFileSync(fileFor(symbol), fresh.map((pt) => JSON.stringify(pt)).join('\n') + '\n');
-      lastTs.set(symbol, fresh[fresh.length - 1][0]); // keep record()'s 1-per-minute throttle in step
-      console.log('[history] gap-filled', symbol, '+' + fresh.length, 'days (' + lastDay + ' -> ' + dayKey(fresh[fresh.length - 1][0]) + ')');
+      const tmp = fileFor(symbol) + '.tmp';
+      fs.writeFileSync(tmp, merged.map((pt) => JSON.stringify(pt)).join('\n') + '\n');
+      fs.renameSync(tmp, fileFor(symbol));
+      console.log('[history] gap-filled', symbol, '+' + fresh.length, 'days (from ' + fromDay + ')');
       return fresh.length;
     } catch (e) {
       console.warn('[history] gap-fill failed for', symbol, e.message);
