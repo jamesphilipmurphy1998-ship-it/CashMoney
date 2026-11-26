@@ -162,7 +162,13 @@
     const add = (t) => { if (t && !isCashTicker(t) && !seen.has(t)) { seen.add(t); out.push(t); } };
     try {
       const { positions } = await Store.loadAll();
-      for (const p of positions) add(String(p.ticker || '').toUpperCase());
+      // Only portfolios linked (ticked) to the summary — same set the
+      // summary's own numbers use (getLinkedSet in app.js).
+      const linked = typeof getLinkedSet === 'function' ? getLinkedSet() : null;
+      for (const p of positions) {
+        if (linked && !linked.has(p.portfolio_id)) continue;
+        add(String(p.ticker || '').toUpperCase());
+      }
     } catch {}
     for (const t of favouriteTickers()) add(t);
     return out;
