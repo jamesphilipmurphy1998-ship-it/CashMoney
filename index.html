@@ -345,24 +345,54 @@
       <h2 class="research-subhead">Stocks to research</h2>
       <div class="research-watchlist" id="research-watchlist"></div>
 
-      <h2 class="research-subhead">Bull case calculator</h2>
-      <p class="muted">A freeform valuation model — not tied to any portfolio holding. Load a ticker to seed year one with real numbers, then type your own growth, margin and P/E assumptions for the years after.</p>
-      <div class="card bull-card">
-        <div class="bull-load-row">
-          <div class="bull-ticker-wrap">
-            <input type="text" id="bull-ticker" class="bull-ticker-input" placeholder="Ticker, e.g. AAPL" autocomplete="off" />
-            <div class="bull-ticker-menu" id="bull-ticker-menu" hidden></div>
+      <!-- Bull case calculator: also shown on a stock page's Research &
+           Projections tab (see stock.js) — rather than a second copy of all
+           this markup + state, app.js physically moves this whole block
+           between here and #sp-bull-anchor, and back again when you leave.
+           #bull-widget-home marks where "here" is. The "Projected share price
+           range" chart card inside it gets moved separately too, higher up
+           the stock page (see #sp-bull-chart-anchor) — #bull-chart-card-home
+           marks its own "here" for when it comes back. -->
+      <div id="bull-widget">
+        <h2 class="research-subhead">Bull case calculator</h2>
+        <p class="muted">A freeform valuation model — not tied to any portfolio holding. Load a ticker to seed year one with real numbers, then type your own growth, margin and P/E assumptions for the years after.</p>
+        <div class="card bull-card">
+          <div class="bull-load-row">
+            <div class="bull-ticker-wrap">
+              <input type="text" id="bull-ticker" class="bull-ticker-input" placeholder="Ticker, e.g. AAPL" autocomplete="off" />
+              <div class="bull-ticker-menu" id="bull-ticker-menu" hidden></div>
+            </div>
+            <button class="btn btn-dark" id="bull-load">Load</button>
+            <button class="btn" id="bull-lock" title="Lock this projection so it persists across refreshes, logouts and logins">🔓 Lock</button>
+            <span class="muted" id="bull-loaded-label"></span>
           </div>
-          <button class="btn btn-dark" id="bull-load">Load</button>
-          <span class="muted" id="bull-loaded-label"></span>
-        </div>
-        <div class="bull-table-wrap">
-          <span class="bull-tag">Bull case</span>
-          <div class="table-scroll">
-            <table id="bull-table" class="bull-table"></table>
+          <div class="bull-table-wrap">
+            <div class="bull-case-tabs" id="bull-case-tabs"></div>
+            <div class="table-scroll">
+              <table id="bull-table" class="bull-table"></table>
+            </div>
+          </div>
+          <div id="bull-chart-card-home"></div>
+          <div class="block card sp-chart bull-chart-card" id="bull-chart-card">
+            <div class="block-head">
+              <h2>Projected share price range</h2>
+              <div class="calc-chart-legend">
+                <span class="calc-legend-item"><i class="calc-legend-dot bull-legend-dot-low"></i>Low</span>
+                <span class="calc-legend-item"><i class="calc-legend-dot bull-legend-dot-high"></i>High</span>
+                <span class="calc-legend-item"><i class="bull-legend-dash"></i>Current price</span>
+              </div>
+            </div>
+            <div class="bull-chart-plot" id="bull-chart-plot">
+              <div class="bull-yaxis" id="bull-yaxis"></div>
+              <div class="bull-chart-xy">
+                <div class="sp-chart-plot bull-chart-svgwrap" id="bull-chart-svgwrap"></div>
+                <div class="bull-xaxis" id="bull-xaxis"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
+      <div id="bull-widget-home"></div>
 
       <h2 class="research-subhead">Notes</h2>
       <p class="muted">All your research notes, across every portfolio. Click one to open it where it lives.</p>

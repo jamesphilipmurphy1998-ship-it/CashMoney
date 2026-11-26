@@ -1231,6 +1231,32 @@ async function showApp(user) {
   // — see Prices.finnhubKey's own comment for what this changes.
   try { Prices.finnhubKey = await Store.getFinnhubKey(); } catch { Prices.finnhubKey = ''; }
 
+  // Restore locked Bull case projection(s), if any (see the lock button near
+  // #bull-load) — the widget only surfaces one TICKER at a time, so the most
+  // recently locked one wins if locks exist for more than one. Every locked
+  // case (Bull/Standard/Bear) belonging to that same ticker gets restored
+  // into its own tab; any case that wasn't locked just starts fresh.
+  try {
+    const locks = await Store.getBullLocks();
+    const keys = Object.keys(locks);
+    if (keys.length) {
+      const last = locks[keys[keys.length - 1]];
+      bullState = { ticker: last.ticker, name: last.name, price: last.price, shares: last.shares, actual: last.actual, netIncomeUnit: last.netIncomeUnit };
+      const actualYear = parseInt(String(last.actual?.label || '').replace(/\D/g, ''), 10) || new Date().getFullYear();
+      bullCases = { bull: bullEmptyCase(actualYear + 1), standard: bullEmptyCase(actualYear + 1), bear: bullEmptyCase(actualYear + 1) };
+      for (const k of keys) {
+        const snap = locks[k];
+        if (snap.ticker !== last.ticker) continue;
+        const cs = BULL_CASES.includes(snap.case) ? snap.case : 'bull';
+        bullCases[cs] = { investment: snap.investment, years: snap.years, locked: true };
+      }
+      bullActiveCase = BULL_CASES.includes(last.case) ? last.case : 'bull';
+      const label = $('#bull-loaded-label');
+      if (label) label.textContent = bullState.name ? `${bullState.ticker} — ${bullState.name}` : bullState.ticker;
+      renderBullTable();
+    }
+  } catch (e) { console.warn('Failed to restore locked Bull case projection:', e); }
+
   ready = false;
   try {
     portfolios = await Store.listPortfolios();
@@ -1720,6 +1746,7 @@ const ResearchPage = {
     $('#research-page').hidden = false;
     window.scrollTo(0, 0);
     renderResearchWatchlist();
+    if (window.BullWidget) BullWidget.returnHome(); // may have been moved onto a stock page's Research tab
     renderBullTable();
     await this.render();
   },
@@ -1773,15 +1800,41 @@ function bullEmptyYears(startYear) {
     label: String(startYear + i),
     growthPct: null,
     marginPct: null,
+    netIncomeRaw: null, // last dollar amount typed directly into Net income, if any — see bullCompute's staleness check
     peLow: null,
     peHigh: null,
   }));
 }
+// Three independent scenarios (Bull/Standard/Bear) for the same loaded
+// stock — same real "actual" column (shared, since it's just reported data),
+// but each case gets its own growth/margin/P/E/investment inputs and its own
+// lock, so switching tabs never mixes one case's assumptions into another's.
+const BULL_CASES = ['bull', 'standard', 'bear'];
+const BULL_CASE_LABELS = { bull: 'Bull case', standard: 'Standard case', bear: 'Bear case' };
+function bullEmptyCase(startYear) {
+  return {
+    investment: null, // a dollar amount typed into "Monetary input" — projected forward at each year's CAGR low/high
+    years: bullEmptyYears(startYear),
+    locked: false, // see BullWidget's lock button — true means this snapshot is saved server-side and read-only until unlocked
+  };
+}
 let bullState = {
-  ticker: '', name: '', price: null, shares: null,
+  ticker: '', name: '', price: null, shares: null, netIncomeUnit: { scale: 1e6, suffix: 'M' },
   actual: { label: 'Actual', revenue: null, netIncome: null, marginPct: null }, // latest reported fiscal year
-  years: bullEmptyYears(new Date().getFullYear() + 1),
 };
+let bullActiveCase = 'bull';
+let bullCases = { bull: bullEmptyCase(new Date().getFullYear() + 1), standard: bullEmptyCase(new Date().getFullYear() + 1), bear: bullEmptyCase(new Date().getFullYear() + 1) };
+function currentCase() { return bullCases[bullActiveCase]; }
+// Net income runs into the hundreds of millions/billions — typing "63.84"
+// instead of "63840000" needs a unit, picked once from the actual column's
+// real magnitude so every year in the table reads on the same scale.
+function bullUnitScale(n) {
+  const abs = Math.abs(n || 0);
+  if (abs >= 1e9) return { scale: 1e9, suffix: 'B' };
+  if (abs >= 1e6) return { scale: 1e6, suffix: 'M' };
+  if (abs >= 1e3) return { scale: 1e3, suffix: 'K' };
+  return { scale: 1, suffix: '' };
+}
 
 function fmtBullMoney(n) {
   if (n == null || Number.isNaN(n)) return '—';
@@ -1824,13 +1877,22 @@ async function bullLoadTicker(ticker) {
     const price = stockData?.quote?.price ?? null;
     const actualDate = income?.dates?.[rev.dateIdx];
     const actualYear = actualDate ? new Date(actualDate).getUTCFullYear() : new Date().getFullYear();
+    // The prior year's revenue is already in the same row we just read —
+    // real YoY growth, not an assumption, so it's shown but not editable.
+    const revRow = rows.find((r) => r.key === 'TotalRevenue');
+    const prevRevenue = revRow && rev.dateIdx > 0 ? revRow.values[rev.dateIdx - 1] : null;
     const actual = {
       label: 'FY' + actualYear,
       revenue: rev.value,
       netIncome: ni.value,
       marginPct: rev.value && ni.value != null ? (ni.value / rev.value) * 100 : null,
+      growthPct: rev.value != null && prevRevenue ? ((rev.value - prevRevenue) / prevRevenue) * 100 : null,
     };
-    bullState = { ticker: sym, name: stockData?.profile?.name || '', price, shares, actual, years: bullEmptyYears(actualYear + 1) };
+    const carriedInvestment = currentCase().investment; // carried over — comparing the same $ amount across stocks (and cases) is the point
+    bullState = { ticker: sym, name: stockData?.profile?.name || '', price, shares, actual, netIncomeUnit: bullUnitScale(actual.netIncome) };
+    // Loading a (different) ticker always starts every case fresh and unlocked.
+    bullCases = { bull: bullEmptyCase(actualYear + 1), standard: bullEmptyCase(actualYear + 1), bear: bullEmptyCase(actualYear + 1) };
+    for (const c of BULL_CASES) bullCases[c].investment = carriedInvestment;
     label.textContent = bullState.name ? `${bullState.ticker} — ${bullState.name}` : bullState.ticker;
   } catch {
     label.textContent = 'Could not load ' + sym;
@@ -1844,14 +1906,16 @@ async function bullLoadTicker(ticker) {
 // previous column's margin forward, so you only have to type a new one when
 // your assumption actually changes.
 function bullCompute() {
+  const c = currentCase();
   const actualEps = bullState.actual.netIncome != null && bullState.shares ? bullState.actual.netIncome / bullState.shares : null;
   const out = [{
-    label: bullState.actual.label, isActual: true, growthPct: null,
+    label: bullState.actual.label, isActual: true, growthPct: bullState.actual.growthPct,
     revenue: bullState.actual.revenue, marginPct: bullState.actual.marginPct, netIncome: bullState.actual.netIncome,
     eps: actualEps, peLow: null, peHigh: null, priceLow: null, priceHigh: null, cagrLow: null, cagrHigh: null,
+    investLow: c.investment, investHigh: c.investment, // day-0 baseline — no low/high split yet
   }];
   let prevRevenue = bullState.actual.revenue;
-  bullState.years.forEach((y, i) => {
+  c.years.forEach((y, i) => {
     const revenue = prevRevenue != null && y.growthPct != null ? prevRevenue * (1 + y.growthPct / 100) : null;
     const marginPct = y.marginPct != null ? y.marginPct : out[out.length - 1].marginPct;
     const netIncome = revenue != null && marginPct != null ? revenue * (marginPct / 100) : null;
@@ -1861,14 +1925,41 @@ function bullCompute() {
     const yearsOut = i + 1; // years past the actual column, for annualizing CAGR
     const cagrLow = priceLow != null && bullState.price ? (Math.pow(priceLow / bullState.price, 1 / yearsOut) - 1) * 100 : null;
     const cagrHigh = priceHigh != null && bullState.price ? (Math.pow(priceHigh / bullState.price, 1 / yearsOut) - 1) * 100 : null;
-    out.push({ label: y.label, isActual: false, growthPct: y.growthPct, revenue, marginPct, netIncome, eps, peLow: y.peLow, peHigh: y.peHigh, priceLow, priceHigh, cagrLow, cagrHigh });
+    // Same growth ratio the stock's own low/high projection implies, applied
+    // straight to whatever you'd have put in today — no need to round-trip
+    // through the annualized CAGR figure above.
+    const investLow = c.investment != null && priceLow != null && bullState.price ? c.investment * (priceLow / bullState.price) : null;
+    const investHigh = c.investment != null && priceHigh != null && bullState.price ? c.investment * (priceHigh / bullState.price) : null;
+    out.push({ label: y.label, isActual: false, growthPct: y.growthPct, revenue, marginPct, netIncome, eps, peLow: y.peLow, peHigh: y.peHigh, priceLow, priceHigh, cagrLow, cagrHigh, investLow, investHigh });
     prevRevenue = revenue;
   });
   return out;
 }
 
 function bullInputCell(field, idx, value, step, placeholder = 'ENTER VALUES') {
-  return `<input type="text" inputmode="decimal" class="bull-input" data-field="${field}" data-idx="${idx}" value="${value ?? ''}" placeholder="${esc(String(placeholder))}" step="${step}" />`;
+  return `<input type="text" inputmode="decimal" class="bull-input" data-field="${field}" data-idx="${idx}" value="${value ?? ''}" placeholder="${esc(String(placeholder))}" step="${step}"${currentCase().locked ? ' disabled' : ''} />`;
+}
+// Net income is editable too, in the same unit as the rest of the table
+// (M/B — see bullUnitScale). Typing here sets an implied margin % (so
+// Revenue -> Margin -> Net income keeps working automatically the other
+// way), so the raw typed number only stays valid while it still matches
+// what that margin currently computes to — if an earlier field (growth,
+// margin) has since moved, this cell falls back to showing the live
+// computed figure as a placeholder instead of a now-stale bold value.
+function bullNetIncomeInputHtml(idx, computedNetIncome) {
+  const unit = bullState.netIncomeUnit;
+  const raw = currentCase().years[idx].netIncomeRaw;
+  const fresh = raw != null && computedNetIncome != null && Math.abs(raw - computedNetIncome) / Math.max(Math.abs(raw), 1) < 0.001;
+  const value = fresh ? Number((raw / unit.scale).toFixed(2)) : null;
+  const placeholder = computedNetIncome != null ? (computedNetIncome / unit.scale).toFixed(2) + unit.suffix : 'ENTER VALUES';
+  return `<span class="rev-input-wrap">${bullInputCell('netIncome', idx, value, 0.1, placeholder)}<span class="rev-input-unit bull-input-unit">${unit.suffix}</span></span>`;
+}
+// A single dollar amount, not per-year like every other input — how much
+// you'd put in today, projected forward at each year's implied low/high
+// growth (see "Investment value low/high" below). Lives only in the actual
+// column since it's a one-time entry, not an assumption that changes yearly.
+function bullInvestmentInputHtml() {
+  return `<input type="text" inputmode="decimal" class="bull-input" data-field="investment" value="${currentCase().investment ?? ''}" placeholder="ENTER VALUES" step="100"${currentCase().locked ? ' disabled' : ''} />`;
 }
 // Computed (non-input) cells carry a data-cell marker so an input event can
 // patch just their textContent — full re-render would recreate every input
@@ -1876,25 +1967,40 @@ function bullInputCell(field, idx, value, step, placeholder = 'ENTER VALUES') {
 function bullComputedCell(key, idx, text, extraCls = '') {
   return `<td class="num${extraCls ? ' ' + extraCls : ''}" data-cell="${key}" data-idx="${idx}">${text}</td>`;
 }
+// Bull/Standard/Bear tab bar — sits where the single static "Bull case" tag
+// used to be. Switching tabs just repoints currentCase() at a different
+// entry in bullCases and re-renders; nothing about one case's inputs ever
+// touches another's.
+function renderBullCaseTabs() {
+  const wrap = $('#bull-case-tabs');
+  if (!wrap) return;
+  wrap.innerHTML = BULL_CASES
+    .map((c) => `<button class="bull-case-tab bull-case-tab-${c}${c === bullActiveCase ? ' active' : ''}" data-case="${c}">${esc(BULL_CASE_LABELS[c])}</button>`)
+    .join('');
+}
 function renderBullTable() {
+  renderBullCaseTabs();
   const rows = bullCompute();
   // rows[0] is the read-only actual column; rows[i] for i>0 maps to
-  // bullState.years[i-1] for editable-input cells.
+  // currentCase().years[i-1] for editable-input cells.
   const headTitle = bullState.ticker ? `${esc(bullState.ticker)}${bullState.price ? ' — ' + fmtBullPrice(bullState.price) : ''}` : 'Year';
   const headCells = rows.map((r) => `<th class="num">${esc(r.label)}</th>`).join('');
   const row = (label, cells, cls = '') => `<tr class="${cls}"><td>${label}</td>${cells}</tr>`;
   $('#bull-table').innerHTML = `
     <thead><tr><th>${headTitle}</th>${headCells}</tr></thead>
     <tbody>
-      ${row('Revenue growth', rows.map((r, i) => `<td class="num">${r.isActual ? '—' : bullInputCell('growthPct', i - 1, r.growthPct, 0.5)}</td>`).join(''))}
+      ${row('Revenue growth', rows.map((r, i) => `<td class="num">${r.isActual ? fmtBullPct(r.growthPct) : bullInputCell('growthPct', i - 1, r.growthPct, 0.5)}</td>`).join(''))}
       ${row('Revenue', rows.map((r, i) => bullComputedCell('revenue', i, fmtBullMoney(r.revenue))).join(''))}
       ${row('Net income margin', rows.map((r, i) => {
         if (r.isActual) return `<td class="num">${fmtBullPct(r.marginPct)}</td>`;
-        const raw = bullState.years[i - 1].marginPct;
+        const raw = currentCase().years[i - 1].marginPct;
         const carriedHint = r.marginPct != null ? r.marginPct.toFixed(1) : 'ENTER VALUES';
         return `<td class="num">${bullInputCell('marginPct', i - 1, raw != null ? Number(raw.toFixed(1)) : null, 0.5, carriedHint)}</td>`;
       }).join(''))}
-      ${row('Net income', rows.map((r, i) => bullComputedCell('netIncome', i, fmtBullMoney(r.netIncome))).join(''))}
+      ${row('Net income', rows.map((r, i) => {
+        if (r.isActual) return `<td class="num">${fmtBullMoney(r.netIncome)}</td>`;
+        return `<td class="num">${bullNetIncomeInputHtml(i - 1, r.netIncome)}</td>`;
+      }).join(''))}
       ${row('EPS', rows.map((r, i) => bullComputedCell('eps', i, fmtBullPrice(r.eps))).join(''))}
       ${row('P/E low est.', rows.map((r, i) => `<td class="num">${r.isActual ? '—' : bullInputCell('peLow', i - 1, r.peLow, 0.5)}</td>`).join(''))}
       ${row('P/E high est.', rows.map((r, i) => `<td class="num">${r.isActual ? '—' : bullInputCell('peHigh', i - 1, r.peHigh, 0.5)}</td>`).join(''))}
@@ -1902,8 +2008,149 @@ function renderBullTable() {
       ${row('Share price high', rows.map((r, i) => bullComputedCell('priceHigh', i, r.isActual ? '—' : fmtBullPrice(r.priceHigh))).join(''), 'bull-row-price')}
       ${row('CAGR low', rows.map((r, i) => bullComputedCell('cagrLow', i, r.isActual ? '—' : fmtBullPct(r.cagrLow))).join(''))}
       ${row('CAGR high', rows.map((r, i) => bullComputedCell('cagrHigh', i, r.isActual ? '—' : fmtBullPct(r.cagrHigh))).join(''))}
+      ${row('Monetary input', rows.map((r) => `<td class="num">${r.isActual ? bullInvestmentInputHtml() : '—'}</td>`).join(''))}
+      ${row('Investment value low', rows.map((r, i) => bullComputedCell('investLow', i, r.investLow != null ? fmtBullMoney(r.investLow) : '—')).join(''), 'bull-row-invest')}
+      ${row('Investment value high', rows.map((r, i) => bullComputedCell('investHigh', i, r.investHigh != null ? fmtBullMoney(r.investHigh) : '—')).join(''), 'bull-row-invest')}
     </tbody>`;
+  renderBullChart();
+  updateBullLockButton();
 }
+
+// Share price low/high across the projection years — a filled band between
+// the two lines rather than a plain line chart, so the projected range each
+// year reads at a glance. The actual (leftmost) column has no P/E-derived
+// price, so the chart only ever covers the projection years.
+let bullChartHoverPts = [];
+function buildBullRangeChartSVG(points) {
+  const W = 1000, H = 240, pad = 8;
+  let minP = Infinity, maxP = -Infinity;
+  for (const { low, high } of points) {
+    minP = Math.min(minP, low, high);
+    maxP = Math.max(maxP, low, high);
+  }
+  // Axis always spans at least 50% below to 50% above today's actual price,
+  // regardless of how tight the projected range itself is — expanded further
+  // (never clamped inward) if a projection actually goes beyond that band.
+  if (bullState.price != null) {
+    minP = Math.min(minP, bullState.price * 0.5);
+    maxP = Math.max(maxP, bullState.price * 1.5);
+  }
+  const t0 = points[0].ts, t1 = points[points.length - 1].ts;
+  const spanT = t1 - t0 || 1;
+  const spanP = maxP - minP || 1;
+  const x = (ts) => ((ts - t0) / spanT) * W;
+  const y = (v) => pad + (1 - (v - minP) / spanP) * (H - 2 * pad);
+  let dLow = '', dHigh = '';
+  points.forEach(({ ts, low, high }, i) => {
+    dLow += (i ? 'L' : 'M') + x(ts).toFixed(1) + ' ' + y(low).toFixed(1);
+    dHigh += (i ? 'L' : 'M') + x(ts).toFixed(1) + ' ' + y(high).toFixed(1);
+  });
+  let band = 'M' + x(points[0].ts).toFixed(1) + ' ' + y(points[0].high).toFixed(1);
+  for (let i = 1; i < points.length; i++) band += ' L' + x(points[i].ts).toFixed(1) + ' ' + y(points[i].high).toFixed(1);
+  for (let i = points.length - 1; i >= 0; i--) band += ' L' + x(points[i].ts).toFixed(1) + ' ' + y(points[i].low).toFixed(1);
+  band += ' Z';
+  const hoverPts = points.map(({ ts, low, high, label, isActual, pe }) => ({ ts, low, high, label, isActual, pe, xf: (ts - t0) / spanT, yPixLow: y(low), yPixHigh: y(high) }));
+  // A dotted reference line at today's actual price, spanning the full
+  // width, so the projected band's position relative to where the stock
+  // actually is right now reads at a glance instead of just at the start.
+  const refLine = bullState.price != null
+    ? `<line class="bull-ref-line" x1="0" y1="${y(bullState.price).toFixed(1)}" x2="${W}" y2="${y(bullState.price).toFixed(1)}"/>`
+    : '';
+  const svg =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">` +
+    `<path class="sp-chart-area" d="${band}" fill="#e8b923" opacity="0.16"/>` +
+    `<path class="sp-chart-line" d="${dHigh}" stroke="#e8b923"/>` +
+    `<path class="sp-chart-line" d="${dLow}" stroke="var(--up)"/>` +
+    refLine +
+    `</svg>` +
+    `<div class="sp-cross" hidden></div>` +
+    `<div class="sp-dot bull-dot-high" hidden></div><div class="sp-dot bull-dot-low" hidden></div>` +
+    `<div class="sp-hoverbox" hidden></div>`;
+  return { svg, hoverPts, minP, maxP };
+}
+// Y-axis ticks + x-axis year labels live in their own static containers
+// (#bull-yaxis / #bull-xaxis) alongside the plot, rather than inside the
+// SVG itself — preserveAspectRatio="none" non-uniformly stretches the SVG
+// to fill the box, which would distort any text drawn inside it.
+const BULL_Y_TICKS = 4;
+function renderBullChart() {
+  const svgWrap = $('#bull-chart-svgwrap');
+  const yaxis = $('#bull-yaxis');
+  const xaxis = $('#bull-xaxis');
+  // The actual column has no P/E-derived price, but today's real share
+  // price is exactly that — plot it as the chart's starting point (low and
+  // high collapsed to the same value) so the projected range visibly fans
+  // out from where the stock actually is today.
+  const rows = bullCompute();
+  const points = [];
+  if (bullState.price != null) {
+    const actualEps = rows[0]?.eps;
+    const pe = actualEps ? bullState.price / actualEps : null;
+    points.push({ low: bullState.price, high: bullState.price, label: bullState.actual.label, isActual: true, pe });
+  }
+  rows.forEach((r) => {
+    if (!r.isActual && r.priceLow != null && r.priceHigh != null) points.push({ low: r.priceLow, high: r.priceHigh, label: r.label });
+  });
+  points.forEach((p, i) => { p.ts = i; });
+  if (points.length === 0) {
+    // No ticker loaded yet — nothing real to plot at all.
+    bullChartHoverPts = [];
+    svgWrap.innerHTML = '<div class="sp-chart-msg">Load a ticker to see its current price and projected range.</div>';
+    yaxis.innerHTML = '';
+    xaxis.innerHTML = '';
+    return;
+  }
+  if (points.length === 1) {
+    // Only the actual/current price is known so far (data we already have as
+    // soon as a ticker loads) — plot it immediately as a flat reference line
+    // rather than hiding it behind a message until P/E estimates exist too.
+    const only = points[0];
+    const flat = [only, { ...only, ts: 1, label: '' }];
+    const { svg, hoverPts, minP, maxP } = buildBullRangeChartSVG(flat);
+    bullChartHoverPts = [hoverPts[0]];
+    svgWrap.innerHTML = svg + '<div class="sp-chart-msg sp-chart-msg-overlay">Enter P/E low and high estimates for at least one projection year to see the projected range.</div>';
+    yaxis.innerHTML = Array.from({ length: BULL_Y_TICKS + 1 }, (_, i) => `<span>${fmtBullPrice(maxP - (i * (maxP - minP)) / BULL_Y_TICKS)}</span>`).join('');
+    xaxis.innerHTML = `<span>${esc(only.label)}</span>`;
+    return;
+  }
+  const { svg, hoverPts, minP, maxP } = buildBullRangeChartSVG(points);
+  bullChartHoverPts = hoverPts;
+  svgWrap.innerHTML = svg;
+  yaxis.innerHTML = Array.from({ length: BULL_Y_TICKS + 1 }, (_, i) => `<span>${fmtBullPrice(maxP - (i * (maxP - minP)) / BULL_Y_TICKS)}</span>`).join('');
+  xaxis.innerHTML = points.map((p) => `<span>${esc(p.label)}</span>`).join('');
+}
+// Own hover binder (not the shared bindValueChartHover) since this chart
+// needs two dots — one sitting on the high line, one on the low line — not
+// a single dot at their midpoint.
+(() => {
+  const plot = $('#bull-chart-svgwrap');
+  plot.addEventListener('mousemove', (e) => {
+    const pts = bullChartHoverPts;
+    const cross = plot.querySelector('.sp-cross');
+    const dotHigh = plot.querySelector('.bull-dot-high');
+    const dotLow = plot.querySelector('.bull-dot-low');
+    const box = plot.querySelector('.sp-hoverbox');
+    if (!pts.length || !cross || !dotHigh || !dotLow || !box) return;
+    const rect = plot.getBoundingClientRect();
+    const fx = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width));
+    let best = pts[0];
+    let bd = Infinity;
+    for (const p of pts) { const dd = Math.abs(p.xf - fx); if (dd < bd) { bd = dd; best = p; } }
+    const left = best.xf * 100;
+    cross.style.left = left + '%'; cross.hidden = false;
+    dotHigh.style.left = left + '%'; dotHigh.style.top = best.yPixHigh + 'px'; dotHigh.hidden = false;
+    dotLow.style.left = left + '%'; dotLow.style.top = best.yPixLow + 'px'; dotLow.hidden = false;
+    box.innerHTML = best.isActual
+      ? `<b>${fmtBullPrice(best.low)}</b><span>${esc(best.label)} (current)${best.pe != null ? ' · P/E ' + best.pe.toFixed(1) : ''}</span>`
+      : `<b>${fmtBullPrice(best.low)} – ${fmtBullPrice(best.high)}</b><span>${esc(best.label)}</span>`;
+    box.style.left = left + '%';
+    box.style.transform = best.xf < 0.12 ? 'translateX(0)' : best.xf > 0.88 ? 'translateX(-100%)' : 'translateX(-50%)';
+    box.hidden = false;
+  });
+  plot.addEventListener('mouseleave', () => {
+    plot.querySelectorAll('.sp-cross, .sp-dot, .sp-hoverbox').forEach((el) => { el.hidden = true; });
+  });
+})();
 // Patches only the computed cells' text after an edit — the inputs
 // themselves are left completely untouched, so focus/caret never moves.
 function bullPatchComputedCells() {
@@ -1911,22 +2158,96 @@ function bullPatchComputedCells() {
   const set = (key, i, text) => { const el = $(`#bull-table [data-cell="${key}"][data-idx="${i}"]`); if (el) el.textContent = text; };
   rows.forEach((r, i) => {
     set('revenue', i, fmtBullMoney(r.revenue));
-    set('netIncome', i, fmtBullMoney(r.netIncome));
     set('eps', i, fmtBullPrice(r.eps));
     set('priceLow', i, r.isActual ? '—' : fmtBullPrice(r.priceLow));
     set('priceHigh', i, r.isActual ? '—' : fmtBullPrice(r.priceHigh));
     set('cagrLow', i, r.isActual ? '—' : fmtBullPct(r.cagrLow));
     set('cagrHigh', i, r.isActual ? '—' : fmtBullPct(r.cagrHigh));
+    set('investLow', i, r.investLow != null ? fmtBullMoney(r.investLow) : '—');
+    set('investHigh', i, r.investHigh != null ? fmtBullMoney(r.investHigh) : '—');
     // Margin placeholder shows what a blank cell will carry forward as —
     // safe to refresh live since changing `placeholder` doesn't touch the
     // input's value, focus, or caret the way changing `value` would.
     if (!r.isActual) {
-      const marginInput = $(`#bull-table [data-field="marginPct"][data-idx="${i - 1}"]`);
+      const idx = i - 1;
+      const marginInput = $(`#bull-table [data-field="marginPct"][data-idx="${idx}"]`);
       if (marginInput) marginInput.placeholder = r.marginPct != null ? r.marginPct.toFixed(1) : 'ENTER VALUES';
+      // Net income's value only gets touched here if it's gone stale (its
+      // implied margin no longer matches — see bullNetIncomeInputHtml) and
+      // it isn't the field currently being typed into, so this never fights
+      // the user's own keystrokes.
+      const niInput = $(`#bull-table [data-field="netIncome"][data-idx="${idx}"]`);
+      if (niInput && document.activeElement !== niInput) {
+        const unit = bullState.netIncomeUnit;
+        const raw = currentCase().years[idx].netIncomeRaw;
+        const fresh = raw != null && r.netIncome != null && Math.abs(raw - r.netIncome) / Math.max(Math.abs(raw), 1) < 0.001;
+        niInput.value = fresh ? Number((raw / unit.scale).toFixed(2)) : '';
+        niInput.placeholder = r.netIncome != null ? (r.netIncome / unit.scale).toFixed(2) + unit.suffix : 'ENTER VALUES';
+      }
     }
   });
+  renderBullChart();
 }
 $('#bull-load').addEventListener('click', () => bullLoadTicker($('#bull-ticker').value));
+
+// Lock button: freezes the current CASE's projection (read-only inputs) and
+// saves it server-side keyed by "ticker::case" (see Store.saveBullLock/
+// store.js's bull_locks column) so it survives refreshes, logouts/logins,
+// and site updates — not just this browser tab's in-memory state. Each case
+// locks independently, so Bull can be locked while Standard/Bear stay
+// editable. Unlocking deletes the saved copy and re-enables editing.
+function bullLockKey(ticker, caseName) { return `${ticker}::${caseName}`; }
+function updateBullLockButton() {
+  const btn = $('#bull-lock');
+  if (!btn) return;
+  const hasTicker = !!bullState.ticker;
+  const locked = currentCase().locked;
+  btn.disabled = !hasTicker;
+  btn.textContent = locked ? '🔒 Locked' : '🔓 Lock';
+  btn.classList.toggle('bull-locked', !!locked);
+  btn.title = locked
+    ? 'Unlock to edit this projection again'
+    : 'Lock this projection so it persists across refreshes, logouts and logins';
+  $('#bull-ticker').disabled = !!locked;
+  $('#bull-load').disabled = !!locked;
+}
+$('#bull-lock').addEventListener('click', async () => {
+  if (!bullState.ticker) return;
+  const c = currentCase();
+  const btn = $('#bull-lock');
+  btn.disabled = true;
+  const key = bullLockKey(bullState.ticker, bullActiveCase);
+  const label = $('#bull-loaded-label');
+  const prevLabelText = label ? label.textContent : '';
+  try {
+    if (c.locked) {
+      await Store.deleteBullLock(key);
+      c.locked = false;
+    } else {
+      c.locked = true; // set before saving so the persisted snapshot itself records the locked state
+      await Store.saveBullLock(key, { ...bullState, ...c, case: bullActiveCase });
+    }
+  } catch (e) {
+    console.warn('Bull lock toggle failed:', e);
+    c.locked = !c.locked; // revert on failure
+    // Surface the failure instead of reverting silently — most likely cause
+    // is supabase/bull-locks-migration.sql not having been run yet, so the
+    // bull_locks column doesn't exist on user_settings.
+    if (label) {
+      label.textContent = 'Lock failed: ' + (e?.message || e);
+      setTimeout(() => { if (label.textContent.startsWith('Lock failed')) label.textContent = prevLabelText; }, 6000);
+    }
+  }
+  updateBullLockButton();
+  renderBullTable(); // re-render so inputs pick up the new disabled state
+});
+// Case tab clicks — just repoints currentCase(), no fetch involved.
+$('#bull-case-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('.bull-case-tab[data-case]');
+  if (!btn || btn.dataset.case === bullActiveCase) return;
+  bullActiveCase = btn.dataset.case;
+  renderBullTable();
+});
 $('#bull-ticker').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); $('#bull-ticker-menu').hidden = true; bullLoadTicker($('#bull-ticker').value); }
   if (e.key === 'Escape') { $('#bull-ticker-menu').hidden = true; }
@@ -1967,12 +2288,65 @@ document.addEventListener('click', (e) => {
 $('#bull-table').addEventListener('input', (e) => {
   const inp = e.target.closest('.bull-input');
   if (!inp) return;
-  const idx = Number(inp.dataset.idx);
   const field = inp.dataset.field;
   const v = inp.value.trim() === '' ? null : Number(inp.value);
-  bullState.years[idx][field] = Number.isNaN(v) ? null : v;
+  if (field === 'investment') {
+    currentCase().investment = Number.isNaN(v) ? null : v;
+    bullPatchComputedCells();
+    return;
+  }
+  const idx = Number(inp.dataset.idx);
+  const year = currentCase().years[idx];
+  if (field === 'netIncome') {
+    // Typing net income directly sets the implied margin % instead, so
+    // Revenue -> Margin -> Net income keeps driving everything else exactly
+    // as before — this is just a second way to set the same underlying
+    // assumption. bullPatchComputedCells' staleness check is what actually
+    // keeps this cell in sync if margin/growth get edited afterward.
+    const revenueThisYear = bullCompute()[idx + 1]?.revenue;
+    const raw = Number.isNaN(v) || v == null ? null : v * bullState.netIncomeUnit.scale;
+    year.netIncomeRaw = raw;
+    year.marginPct = raw != null && revenueThisYear ? (raw / revenueThisYear) * 100 : null;
+  } else {
+    year[field] = Number.isNaN(v) ? null : v;
+  }
   bullPatchComputedCells();
 });
+
+// The Bull case widget also shows up on a stock page's Research &
+// Projections tab (see stock.js's loadResearch) — rather than a second copy
+// of all the above state/markup, the single #bull-widget DOM node is
+// physically relocated between here and wherever it's needed, then moved
+// back to #bull-widget-home (its position on the standalone Research page)
+// when that page is opened again.
+const BullWidget = {
+  // chartAnchorSel is optional — only the stock page's Research & Projections
+  // tab wants the "Projected share price range" chart pulled out and placed
+  // higher up the page (above the Revenue & Projections table, below the two
+  // earnings/revenue charts); the standalone Research page just keeps it
+  // where it's authored, inside the widget itself.
+  attachTo(anchorSel, chartAnchorSel, ticker) {
+    const anchor = $(anchorSel);
+    const widget = $('#bull-widget');
+    if (!anchor || !widget) return;
+    anchor.appendChild(widget);
+    const chartAnchor = chartAnchorSel && $(chartAnchorSel);
+    const chartCard = $('#bull-chart-card');
+    if (chartAnchor && chartCard) chartAnchor.appendChild(chartCard);
+    if (ticker && ticker !== bullState.ticker) bullLoadTicker(ticker);
+    else renderBullTable();
+  },
+  returnHome() {
+    const home = $('#bull-widget-home');
+    const widget = $('#bull-widget');
+    if (!home || !widget) return;
+    home.after(widget);
+    const chartHome = $('#bull-chart-card-home');
+    const chartCard = $('#bull-chart-card');
+    if (chartHome && chartCard) chartHome.after(chartCard);
+  },
+};
+window.BullWidget = BullWidget;
 
 // Compound Calculator: a standalone projection tool, not tied to any
 // portfolio's actual holdings — monthly-compounded, monthly contributions.

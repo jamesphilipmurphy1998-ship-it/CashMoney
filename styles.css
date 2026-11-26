@@ -452,13 +452,19 @@ body.compound-open .pf-title.active, body.home-open .pf-title.active, body.stock
 .bull-ticker-input { width: 200px; font: inherit; font-size: 14px; color: var(--text); background: var(--surface-2); border: 0.5px solid var(--border-strong); border-radius: 10px; padding: 10px 12px; }
 .bull-ticker-input:focus { outline: none; border-color: var(--accent); }
 .bull-ticker-menu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 260px; max-height: 320px; overflow-y: auto; background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); padding: 6px; }
+#bull-lock.bull-locked { background: var(--accent); color: #06210f; border-color: var(--accent); }
 
 /* Bull case table — deliberately its own ledger/spreadsheet look (thick
    white grid lines, black cells, white label column, gold price rows),
    distinct from the app's normal card styling — modeled on 1000xstocks'
    bull-case sheet rather than matching the rest of the UI. */
 .bull-table-wrap { position: relative; padding-top: 22px; }
-.bull-tag { position: absolute; top: 0; left: 0; background: #2fb35c; color: #06210f; font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 12px; border-radius: 4px 4px 0 0; }
+.bull-case-tabs { position: absolute; top: 0; left: 0; display: flex; gap: 2px; }
+.bull-case-tab { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; padding: 4px 12px; border-radius: 4px 4px 0 0; border: 0; cursor: pointer; background: #333; color: #ccc; }
+.bull-case-tab:hover { background: #444; }
+.bull-case-tab.active.bull-case-tab-bull { background: #2fb35c; color: #06210f; }
+.bull-case-tab.active.bull-case-tab-standard { background: #e8b923; color: #06210f; }
+.bull-case-tab.active.bull-case-tab-bear { background: #d64545; color: #ffffff; }
 .bull-table { border-collapse: collapse; width: 100%; min-width: 720px; background: #000; }
 .bull-table th, .bull-table td { border: 2px solid #fff; padding: 10px 14px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .bull-table thead th { background: #000; color: #fff; font-weight: 700; font-size: 14px; }
@@ -468,12 +474,27 @@ body.compound-open .pf-title.active, body.home-open .pf-title.active, body.stock
   letter-spacing: 0.02em; text-align: left; position: sticky; left: 0;
 }
 .bull-table tr.bull-row-price td:not(:first-child) { background: linear-gradient(90deg, #e8b923, #caa11a); color: #201700; }
+.bull-table tr.bull-row-invest td:not(:first-child) { background: linear-gradient(90deg, #3b82f6, #2563eb); color: #eaf1ff; }
 .bull-input {
   width: 100%; max-width: 96px; text-align: right; font: inherit; font-weight: 700; font-size: 13px;
   color: #fff; background: transparent; border: none; padding: 0;
 }
 .bull-input:focus { outline: none; }
+.bull-input:disabled { opacity: 0.55; cursor: not-allowed; }
 .bull-input::placeholder { color: #8a8a8a; font-weight: 600; font-size: 11px; letter-spacing: 0.03em; }
+.bull-input-unit { color: #8a8a8a; font-weight: 600; }
+.bull-chart-card { margin-top: 18px; }
+.bull-legend-dot-low { background: var(--up); }
+.bull-legend-dot-high { background: #e8b923; }
+.bull-chart-plot { display: flex; gap: 10px; }
+.bull-yaxis { display: flex; flex-direction: column; justify-content: space-between; padding: 4px 0 24px; font-size: 11px; color: var(--muted); text-align: right; min-width: 58px; flex: none; font-variant-numeric: tabular-nums; }
+.bull-chart-xy { flex: 1; min-width: 0; }
+.bull-chart-svgwrap { height: 240px; }
+.bull-xaxis { display: flex; justify-content: space-between; padding-top: 8px; font-size: 11px; color: var(--muted); }
+.bull-legend-dash { width: 14px; height: 0; border-top: 2px dashed var(--faint); display: inline-block; }
+.bull-ref-line { stroke: var(--faint); stroke-width: 1.5; stroke-dasharray: 6 5; vector-effect: non-scaling-stroke; }
+.bull-dot-low { background: var(--up); }
+.bull-dot-high { background: #e8b923; }
 .rw-search-wrap { position: relative; }
 .rw-search { width: 220px; font: inherit; font-size: 14px; color: var(--text); background: var(--surface-2); border: 0.5px solid var(--border-strong); border-radius: 10px; padding: 12px 14px; }
 .rw-search:focus { outline: none; border-color: var(--accent); }
