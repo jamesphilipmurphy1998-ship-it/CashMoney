@@ -1284,6 +1284,15 @@ async function showApp(user) {
   if (currentUid === user.id) return;
   currentUid = user.id;
 
+  // Open Home right away, before any of the async portfolio load below —
+  // otherwise the summary paints first (visible for however long
+  // Store.listPortfolios()/selectPortfolio() take) and Home only overlays on
+  // top a moment later, a visible flash on every refresh. Showing it here
+  // means body.home-open's CSS (hide everything but #home-page) applies
+  // before the summary ever gets a chance to render, exactly like clicking
+  // the rail's Home button while already on the summary.
+  if (window.HomePage) HomePage.show();
+
   // A user's own pasted Finnhub key, if they've saved one (Connectors page)
   // — see Prices.finnhubKey's own comment for what this changes.
   try { Prices.finnhubKey = await Store.getFinnhubKey(); } catch { Prices.finnhubKey = ''; }
@@ -1331,7 +1340,7 @@ async function showApp(user) {
     // Default landing is the aggregated summary; otherwise honour the last pick.
     const lastPid = localStorage.getItem('cashmoney.activePid');
     const pid = lastPid === AGG || portfolios.some((p) => p.id === lastPid) ? lastPid : AGG;
-    await selectPortfolio(pid);
+    await selectPortfolio(pid, { closeOverlays: false }); // Home is already open (see above) — don't let this close it back to the summary
   } catch (e) {
     console.error('Load failed:', e);
     $('#updated').textContent = 'Could not load — check the table setup.';
@@ -1340,15 +1349,23 @@ async function showApp(user) {
 
 // ---- Portfolio dropdown -------------------------------------------------
 
-async function selectPortfolio(pid) {
+// closeOverlays: false is the boot-time case only (see showApp) — Home is
+// already open there on purpose, and this call is just loading the summary's
+// data in the background underneath it, not the user actually navigating to
+// a portfolio tab. Every real navigation (tab click, etc.) keeps the default
+// true, same as before.
+async function selectPortfolio(pid, { closeOverlays = true } = {}) {
   // Leave any overlay page (stock, connectors, home, profile) — switching
   // portfolio means the user wants to see that portfolio.
-  if (window.StockPage) StockPage.close();
-  if (window.ConnectorsPage) ConnectorsPage.close();
-  if (window.HomePage) HomePage.close();
-  if (window.ProfilePage) ProfilePage.close();
-  if (window.ResearchPage) ResearchPage.close();
-  if (window.CompoundPage) CompoundPage.close();
+  if (closeOverlays) {
+    if (window.StockPage) StockPage.close();
+    if (window.ConnectorsPage) ConnectorsPage.close();
+    if (window.HomePage) HomePage.close();
+    if (window.ProfilePage) ProfilePage.close();
+    if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
+    if (window.CompoundPage) CompoundPage.close();
+  }
   activePid = pid;
   localStorage.setItem('cashmoney.activePid', pid);
   Nav.push({ type: 'portfolio', pid });
