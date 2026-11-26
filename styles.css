@@ -1246,3 +1246,7 @@ body.notifications-open .pf-title.active { color: var(--text); }
 .notif-body .muted { font-size: 12px; }
 .rail-btn { position: relative; }
 .rail-btn.has-notif::after { content: attr(data-count); position: absolute; top: 3px; right: 8px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px; background: #e5484d; color: #fff; font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
+
+/* Holdings rows coloured via right-click — this table only */
+.holdings tbody tr[data-tint] td { background: color-mix(in srgb, var(--row-tint) 22%, transparent); }
+.holdings tbody tr[data-tint]:hover td { background: color-mix(in srgb, var(--row-tint) 34%, transparent); }

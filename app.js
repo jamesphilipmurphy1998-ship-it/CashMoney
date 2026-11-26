@@ -709,6 +709,20 @@ function setTabColor(pid, color) {
   localStorage.setItem(TAB_COLOR_KEY, JSON.stringify(map));
 }
 
+// Per-row colour in the holdings table, set via right-click. Keyed by
+// portfolio + ticker (not position id, which changes on re-import), and only
+// ever read by renderHoldings — it tints that table's rows and nothing else.
+const ROW_COLOR_KEY = 'cashmoney.rowColors';
+const rowColorKey = (p) => `${activePid}|${String(p.ticker).toUpperCase()}`;
+function getRowColors() {
+  try { return JSON.parse(localStorage.getItem(ROW_COLOR_KEY)) || {}; } catch { return {}; }
+}
+function setRowColor(key, color) {
+  const map = getRowColors();
+  if (color) map[key] = color; else delete map[key];
+  localStorage.setItem(ROW_COLOR_KEY, JSON.stringify(map));
+}
+
 // Column-header sort: click a header to sort highest-first, click it again
 // for lowest-first, click a different header to start that column fresh
 // (highest-first). Purely a display order — never touches state.positions,
@@ -764,6 +778,7 @@ function renderHoldings() {
       })
     : ordered;
 
+  const rowColors = getRowColors();
   body.innerHTML = rows
     .map((p) => {
       const value = positionValue(p);
@@ -780,7 +795,8 @@ function renderHoldings() {
       // sort is active the row order is computed, not stored, so there's
       // nothing meaningful to drag into.
       const canDrag = !isAgg() && !holdingsSort.col;
-      return `<tr data-id="${p.id}">
+      const tint = rowColors[rowColorKey(p)];
+      return `<tr data-id="${p.id}"${tint ? ` data-tint style="--row-tint:${esc(tint)}"` : ''}>
         <td class="drag-handle" draggable="${canDrag}" title="${canDrag ? 'Drag to reorder' : 'Clear the column sort to reorder'}">⠿</td>
         <td><span class="sym">${cash ? esc(name) : esc(p.ticker)}</span>${!cash ? `<img class="mini-logo" data-logo="${esc(p.ticker)}" alt="" hidden onerror="this.hidden=true" />` : ''}${!cash && name ? `<span class="h-name">${esc(name)}</span>` : ''}</td>
         <td class="num">${cash ? '—' : fmtShares(p.shares)}</td>
@@ -1069,8 +1085,8 @@ $('#position-form').addEventListener('submit', (e) => {
 
 // A single click on a row opens that stock's own page (Summary tab) — the
 // same as clicking it anywhere else in the app (Search, ticker strip, etc).
-// Editing shares/cost is now a double-click or right-click on the row
-// instead, so it doesn't fight with just wanting to look up the stock.
+// Editing shares/cost is now a double-click on the row (right-click picks
+// the row's colour, see the colour menu below) instead, so it doesn't fight with just wanting to look up the stock.
 $('#holdings-body').addEventListener('click', (e) => {
   if (e.target.closest('.drag-handle')) return; // a drag, not a click-through
   const delId = e.target.getAttribute('data-del');
@@ -1098,10 +1114,6 @@ function editRowAt(e) {
   if (p) openPosition(p);
 }
 $('#holdings-body').addEventListener('dblclick', editRowAt);
-$('#holdings-body').addEventListener('contextmenu', (e) => {
-  if (e.target.closest('tr[data-id]')) e.preventDefault();
-  editRowAt(e);
-});
 
 // Drag-to-reorder: grab the handle, drop on another row to move the dragged
 // one before/after it depending which half of the row the cursor is over.
@@ -3407,6 +3419,7 @@ pfTabs.addEventListener('contextmenu', (e) => {
   const tab = e.target.closest('.pf-tab[data-pid]');
   if (!tab) return;
   e.preventDefault();
+  colorMenuRowKey = null;
   colorMenuPid = tab.dataset.pid;
   const current = getTabColors()[colorMenuPid];
   tabColorMenu.innerHTML =
@@ -3416,12 +3429,37 @@ pfTabs.addEventListener('contextmenu', (e) => {
   tabColorMenu.style.top = e.clientY + 'px';
   tabColorMenu.hidden = false;
 });
+let colorMenuRowKey = null; // set instead of colorMenuPid when the menu was opened on a holdings row
 tabColorMenu.addEventListener('click', (e) => {
   const btn = e.target.closest('[data-color]');
-  if (!btn || !colorMenuPid) return;
+  if (!btn) return;
+  if (colorMenuRowKey) {
+    setRowColor(colorMenuRowKey, btn.dataset.color || null);
+    colorMenuRowKey = null;
+    tabColorMenu.hidden = true;
+    renderHoldings();
+    return;
+  }
+  if (!colorMenuPid) return;
   setTabColor(colorMenuPid, btn.dataset.color || null);
   tabColorMenu.hidden = true;
   renderPortfolioTabs();
+});
+// Right-click a holdings row to colour it (same palette and menu as the tabs).
+$('#holdings-body').addEventListener('contextmenu', (e) => {
+  const tr = e.target.closest('tr[data-id]');
+  const p = tr && state.positions.find((x) => x.id === tr.dataset.id);
+  if (!p) return;
+  e.preventDefault();
+  colorMenuRowKey = rowColorKey(p);
+  colorMenuPid = null;
+  const current = getRowColors()[colorMenuRowKey];
+  tabColorMenu.innerHTML =
+    PALETTE.map((c) => `<button class="tab-color-swatch${c === current ? ' active' : ''}" style="background:${c}" data-color="${c}" aria-label="${c}"></button>`).join('') +
+    `<button class="tab-color-swatch tab-color-none${!current ? ' active' : ''}" data-color="" title="No colour" aria-label="No colour">×</button>`;
+  tabColorMenu.style.left = e.clientX + 'px';
+  tabColorMenu.style.top = e.clientY + 'px';
+  tabColorMenu.hidden = false;
 });
 document.addEventListener('click', (e) => {
   if (!tabColorMenu.hidden && !e.target.closest('#tab-color-menu')) tabColorMenu.hidden = true;
