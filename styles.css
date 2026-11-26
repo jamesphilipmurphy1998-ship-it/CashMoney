@@ -787,3 +787,127 @@ body.home-open .topbar { border-bottom-color: var(--border); }
 }
 .toast.done .spinner { border-top-color: #2ea86f; animation: none; border-color: #2ea86f; }
 @keyframes toast-spin { to { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   Phone / narrow-window layout + installable-app touches.
+   Everything here is inside a media query, so the laptop layout above is
+   unchanged. Placed last so it overrides the desktop rules it targets.
+   ========================================================================== */
+
+/* Touch: no 300ms tap delay / double-tap zoom, no grey tap flash. */
+html { -webkit-tap-highlight-color: transparent; }
+body { touch-action: manipulation; }
+/* Controls that only appear on :hover can't be reached by touch. */
+@media (hover: none) {
+  .mrow .mq-add { opacity: 1; }
+  .fav-row .fav-x { opacity: 0.6; }
+}
+
+/* ---- Narrow windows and phones: the left rail becomes a bottom tab bar ----
+   Below 1180px the rail used to be hidden outright, leaving no way to reach
+   Home / Profile / Research / etc. Same buttons, same ids, same handlers. */
+@media (max-width: 1180px) {
+  .side-rail {
+    display: flex;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    transform: none;
+    flex-direction: row;
+    justify-content: space-between;
+    gap: 0;
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+    border: none;
+    border-top: 0.5px solid var(--border);
+    border-radius: 0;
+    z-index: 60;
+  }
+  .rail-btn { flex: 1 1 0; min-width: 0; width: auto; padding: 6px 1px; gap: 3px; font-size: 10px; line-height: 1.15; text-align: center; }
+  .app { margin-left: 0; padding: calc(8px + env(safe-area-inset-top)) 12px calc(88px + env(safe-area-inset-bottom)); }
+  .toast { bottom: calc(84px + env(safe-area-inset-bottom)); }
+}
+
+/* ---- Phones ---- */
+@media (max-width: 720px) {
+  body { font-size: 14px; }
+  .rail-btn { font-size: 9.5px; }
+  .rail-btn svg { width: 19px; height: 19px; }
+
+  /* Topbar: three stacked rows — [avatar/search/title/tabs] / [ticker] /
+     [buttons]. The desktop version positions things absolutely against each
+     other (buttons pinned bottom-right, scroll caps with hand-tuned negative
+     margins), none of which survives a 390px screen. */
+  .topbar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: stretch; gap: 8px 0; padding-top: 0; border-bottom: none; margin-bottom: 18px; }
+  /* Row 1 = avatar + logo + search; the title and tabs drop to their own
+     full-width rows below. .pf-wrap becomes display:contents so its children
+     (search / title / tabs) wrap as direct items of .brand. */
+  .brand { grid-column: 1 / -1; flex-wrap: wrap; align-items: center; gap: 6px 8px; min-width: 0; }
+  .topbar-avatar, #home-btn.brand-mark { top: 0; margin: 0; }
+  .pf-wrap { display: contents; }
+  .top-search { flex: 1; min-width: 0; margin-top: 0; }
+  .top-search-menu, .fav-menu { min-width: 0; width: calc(100vw - 110px); }
+  .pf-title { flex: 0 0 100%; text-align: left; padding-left: 2px; }
+
+  /* The accent line moves from the topbar's bottom edge (under the buttons,
+     on phones) to directly under the tabs, so the tabs still sit on it. */
+  .pf-tabs-row { flex: 0 0 100%; min-width: 0; align-items: flex-end; border-bottom: 2px solid var(--accent); }
+  .pf-tabs { flex: 1; min-width: 0; width: auto; max-width: none; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .pf-tabs::-webkit-scrollbar { display: none; }
+  .pf-tab { flex: none; }
+  .pf-tab.active { margin-bottom: 0; border-bottom: 2px solid var(--accent); }
+
+  /* Ticker strip between its two scroll caps — caps drop their desktop
+     overhang/negative margins and just flank the strip. */
+  .ticker-scroll-cap { align-self: stretch; margin: 0; height: auto; min-height: 54px; width: 12px; }
+  .topbar .ticker-clip { align-self: stretch; margin: 0; padding-bottom: 0; }
+  .topbar .ticker { padding: 8px 2px 0; margin: 0; gap: 22px; }
+  .topbar .ticker .tk-price { font-size: 14px; }
+
+  .topbar-actions { position: static; grid-column: 1 / -1; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
+  .topbar-actions .btn { padding: 8px 12px; font-size: 13px; }
+
+  .metrics { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .metrics > :last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .metric { padding: 12px 14px; }
+  .alloc-card { aspect-ratio: auto; }
+  .page-title { font-size: 22px; }
+
+  /* Home: one-column news, and the movers rows drop the open price and
+     shrink the chart so the name still has room. */
+  .hm-news-hero-title { font-size: 18px; }
+  .hm-mover { grid-template-columns: minmax(0, 1fr) 64px auto; gap: 10px; padding: 9px 6px; }
+  .hm-mover-open { display: none; }
+  .hm-mover-spark { width: 64px; margin-left: 0; }
+  .hm-mover-price { font-size: 14px; }
+  .hm-mover-chg { font-size: 11px; }
+
+  /* Holdings: drop the drag handle (HTML5 drag-reorder doesn't work on touch
+     anyway), Shares and Cost, so Ticker / Price / Day / Value / Gain fit
+     without a sideways swipe. Shares and cost stay one tap away in the
+     edit dialog (long-press a row). */
+  #holdings-head th:nth-child(1), #holdings-body td:nth-child(1),
+  #holdings-head th:nth-child(3), #holdings-body td:nth-child(3),
+  #holdings-head th:nth-child(4), #holdings-body td:nth-child(4) { display: none; }
+  table.holdings { font-size: 13px; }
+  #holdings-head th, #holdings-body td { padding: 10px 5px; }
+  #holdings-body td:nth-child(2) { max-width: 96px; }
+  #holdings-body .h-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #holdings-body td:nth-child(8) .muted { display: block; font-size: 11px; }
+  .row-actions { width: 28px; }
+
+  /* Calculator results: three 26px numbers side by side can't shrink below
+     their text width ($1,234,567-style values) and pushed the whole page
+     sideways. Stack them; Connectors' two-up totals just wrap if needed. */
+  .conn-totals { flex-wrap: wrap; }
+  .conn-total { flex: 1 1 140px; min-width: 0; }
+  .conn-total-n { font-size: 22px; overflow-wrap: anywhere; }
+  .calc-results { flex-direction: column; }
+  /* Research's Bull-case grid is a ~750px table with no scroll wrapper. */
+  .bull-card { overflow-x: auto; }
+  .conn-caret { margin-right: 2px; }
+
+  .dialog { padding: 18px; }
+  .field-row { grid-template-columns: 1fr; }
+  .btn, .rail-btn, .pf-tab { min-height: 36px; }
+}
