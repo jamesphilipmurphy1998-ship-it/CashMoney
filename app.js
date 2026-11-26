@@ -274,11 +274,17 @@ async function drawLiveRangeChart(plotSel, setHoverPts, range, ctxKey) {
   renderLiveCurvePoints(plot, points, setHoverPts);
 }
 
+// Points past the last real Sharesies sync, estimated from live prices when
+// Sharesies itself isn't connected (see extendSharesiesHistory). Display-only
+// and in memory: never written to Supabase, rebuilt each time Update is
+// pressed, and dropped as soon as a real Sharesies pull replaces the snapshot.
+const sharesiesExtension = new Map(); // portfolio id -> [{ date, value, costBasis }]
+
 function renderSharesiesChart() {
   const card = $('#sharesies-chart-card');
   const p = isAgg() ? null : portfolios.find((x) => x.id === activePid);
-  const history = p?.sharesies_history;
-  if (!history || !history.length) {
+  const stored = p?.sharesies_history;
+  if (!stored || !stored.length) {
     card.hidden = true;
     return;
   }
@@ -288,10 +294,66 @@ function renderSharesiesChart() {
     drawLiveRangeChart('#sharesies-chart-plot', (h) => { sharesiesHoverPts = h; }, sharesiesRange, activePid);
     return;
   }
-  $('#sharesies-chart-synced').textContent = p.sharesies_synced_at
-    ? 'Synced ' + new Date(p.sharesies_synced_at).toLocaleDateString()
-    : '';
-  drawSharesiesChart(history);
+  const ext = sharesiesExtension.get(p.id) || [];
+  const synced = p.sharesies_synced_at ? 'Synced ' + new Date(p.sharesies_synced_at).toLocaleDateString() : '';
+  $('#sharesies-chart-synced').textContent = ext.length
+    ? synced + ' · extended to ' + new Date(ext[ext.length - 1].date).toLocaleDateString() + ' from live prices (approx.)'
+    : synced;
+  drawSharesiesChart(ext.length ? stored.concat(ext) : stored);
+}
+
+// Sharesies' history is a snapshot, so it stops at your last sync (and the
+// server forgets the Sharesies login whenever it restarts). When a real pull
+// isn't possible, fill the gap from that last point to today using the same
+// daily-close price history the Portfolio growth chart uses. Today's share
+// counts are applied across the gap, and the estimate is scaled so it starts
+// exactly where the stored line ended (no jump at the join) — hence approx.
+async function extendSharesiesHistory(p) {
+  const pts = (p.sharesies_history || [])
+    .map((h) => ({ ts: new Date(h.date).getTime(), value: h.value, costBasis: h.costBasis }))
+    .filter((x) => !Number.isNaN(x.ts))
+    .sort((a, b) => a.ts - b.ts);
+  if (!pts.length) return 0;
+  const last = pts[pts.length - 1];
+  const dayEnd = last.ts + 864e5;
+  const curve = await computeLiveCurve(state.positions, 'All');
+  const anchor = [...curve].reverse().find((c) => c.ts <= dayEnd);
+  const ratio = anchor && anchor.value > 0 ? last.value / anchor.value : 1;
+  // The price history keeps several samples per day (the live loop appends as
+  // it prices), so keep only each day's last one — same density as Sharesies'.
+  const perDay = new Map();
+  for (const c of curve) if (c.ts > dayEnd) perDay.set(new Date(c.ts).toISOString().slice(0, 10), c);
+  const fresh = [...perDay.values()]
+    .map((c) => ({ date: new Date(c.ts).toISOString(), value: c.value * ratio, costBasis: last.costBasis }));
+  if (fresh.length) sharesiesExtension.set(p.id, fresh);
+  else sharesiesExtension.delete(p.id);
+  return fresh.length;
+}
+
+async function updateSharesiesChart() {
+  const p = isAgg() ? null : portfolios.find((x) => x.id === activePid);
+  if (!p) return;
+  const btn = $('#sharesies-chart-update');
+  btn.disabled = true;
+  btn.textContent = 'Updating…';
+  try {
+    const res = await refreshSharesiesLink(); // real data, if Sharesies is connected
+    if (res === 'updated') {
+      sharesiesExtension.delete(p.id);
+      showToast('Sharesies history updated', { done: true });
+    } else {
+      const n = await extendSharesiesHistory(p);
+      showToast(n ? 'Extended to today from live prices (approx.)' : 'Already up to date', { done: true });
+    }
+  } catch (e) {
+    console.warn('Graph update failed:', e);
+    showToast('Could not update the graph', { done: true });
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Update';
+    liveCurveCache.clear();
+    render();
+  }
 }
 
 let sharesiesHoverPts = []; // { ts, value, xf(0..1), yPix } for the current draw, like stock.js's hoverPts
@@ -420,6 +482,14 @@ function bindValueChartHover(plotSel, getHoverPts, renderBox) {
 bindValueChartHover('#sharesies-chart-plot', () => sharesiesHoverPts, (best) => {
   const dateLabel = (sharesiesRange === '1D' || sharesiesRange === '5D') ? fmtChartDateTime(best.ts) : fmtSharesiesDate(best.ts);
   return `<b>${fmtNZD(best.value)}</b><span>${dateLabel}</span>`;
+});
+
+$('#sharesies-chart-update').addEventListener('click', updateSharesiesChart);
+// Portfolio growth is already computed live from price history, so "refresh"
+// just throws away the 30s cache and redraws with freshly fetched series.
+$('#summary-chart-refresh').addEventListener('click', () => {
+  liveCurveCache.clear();
+  renderSummaryChart();
 });
 
 $('#sharesies-chart-ranges').addEventListener('click', (e) => {
@@ -1112,8 +1182,12 @@ $('#notes').addEventListener('click', (e) => {
 // basis and the value-history chart from Sharesies — provided you're
 // currently connected (Connectors -> Sharesies). Silently skipped otherwise,
 // so Refresh still works as a plain price recalc when disconnected.
+// Returns what happened so callers can tell the user: 'updated', 'skipped'
+// (aggregate view, or this portfolio was never linked to Sharesies),
+// 'not-connected' (the server's in-memory Sharesies login is gone — it's lost
+// whenever the server restarts), or 'failed'.
 async function refreshSharesiesLink() {
-  if (isAgg()) return;
+  if (isAgg()) return 'skipped';
   // Captured up front: this whole function is a chain of awaited network
   // calls, and `state`/`activePid` are shared globals that selectPortfolio()
   // swaps out wholesale on tab switch. Without this guard, switching tabs
@@ -1124,10 +1198,11 @@ async function refreshSharesiesLink() {
   const targetPid = activePid;
   const stillHere = () => activePid === targetPid && !isAgg();
   const p = portfolios.find((x) => x.id === targetPid);
-  if (!p?.sharesies_linked) return;
+  if (!p?.sharesies_linked) return 'skipped';
   try {
     const st = await (await sharesiesFetch('/api/sharesies/status')).json();
-    if (!st.connected || !stillHere()) return;
+    if (!st.connected) return 'not-connected';
+    if (!stillHere()) return 'skipped';
     const pid = encodeURIComponent(p.sharesies_portfolio_id || '');
     const [holdRes, histRes] = await Promise.all([
       sharesiesFetch('/api/sharesies/holdings?portfolioId=' + pid),
@@ -1150,9 +1225,12 @@ async function refreshSharesiesLink() {
       await Store.saveSharesiesHistory(targetPid, histData.history);
       p.sharesies_history = histData.history;
       p.sharesies_synced_at = new Date().toISOString();
+      return 'updated';
     }
+    return 'failed';
   } catch (e) {
     console.warn('Sharesies refresh failed:', e);
+    return 'failed';
   }
 }
 

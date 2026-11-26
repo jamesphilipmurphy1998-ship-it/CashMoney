@@ -413,6 +413,10 @@ body.aggregate .holdings tbody tr { cursor: default; }
 .block { margin-bottom: 24px; }
 .block-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px; }
 .block-head h2 { font-size: 16px; font-weight: 600; margin: 0; }
+/* Chart cards: title left, sync note + small Update/Refresh button pushed right. */
+.sp-chart .block-head { gap: 10px; }
+.sp-chart .block-head .muted { margin-left: auto; text-align: right; font-size: 12px; }
+.chart-update-btn { flex: none; align-self: center; padding: 4px 12px; font-size: 12px; }
 .muted { color: var(--faint); font-size: 13px; }
 .card { background: var(--card-bg); border: 0.5px solid var(--border); border-radius: 12px; padding: 18px; margin-bottom: 0; }
 
