@@ -1510,6 +1510,12 @@ const ConnectorsPage = {
       // throttling/erroring, so the hot set has stopped refreshing.
       const ageMs = last ? Date.now() - last : Infinity;
       const stale = last && ageMs > 120000;
+      // `d.enabled` is only the shared server-wide key (server/.env's
+      // FINNHUB_KEY) — a signed-in user's own personal key (pasted below)
+      // prices their holdings independently of that, so the pill shouldn't
+      // flatly say "No API key" while this user's own key is active. See the
+      // same fix applied to the Market/Search list's status line.
+      const ownKeyActive = !!Prices.finnhubKey;
       if (d.enabled) {
         if (stale) {
           const mins = Math.floor(ageMs / 60000);
@@ -1520,6 +1526,10 @@ const ConnectorsPage = {
           el.innerHTML = `<span class="dot"></span>Connected · ${Number(fhCount).toLocaleString()} priced`;
         }
         meta.innerHTML = `Last refresh ${when} · API key <code>${key}</code>`;
+      } else if (ownKeyActive) {
+        el.className = 'connector-status on';
+        el.innerHTML = '<span class="dot"></span>Active via your personal key';
+        meta.innerHTML = `Last refresh ${when} · shared server key not set — priced on your own budget`;
       } else {
         el.className = 'connector-status off';
         el.innerHTML = '<span class="dot"></span>No API key — set FINNHUB_KEY in server/.env';
@@ -1528,13 +1538,14 @@ const ConnectorsPage = {
       const row = (k, v) => `<span class="conn-k">${k}</span><span class="conn-v">${v}</span>`;
       $('#finnhub-detail').innerHTML = '<div class="conn-grid">' + [
         row('Role', 'Premium lane — prices the hot set (portfolio holdings, ticker strip, favourites) on a stable budget'),
-        row('Status', d.enabled ? 'Connected' : 'No API key'),
-        row('API key', key ? `<code>${key}</code>` : '—'),
+        row('Status', d.enabled ? 'Connected' : ownKeyActive ? 'Active via your personal key' : 'No API key'),
+        row('API key', key ? `<code>${key}</code>` : ownKeyActive ? 'Your own key (not shown)' : '—'),
         row('Rate budget', '60 calls/min (free tier) · 1 call/sec'),
         row('Hot set', `${hot.length} symbols — each refreshes every ~${Math.max(hot.length, 1)}s`),
         row('Hot symbols', hot.length ? hot.join(', ') : '—'),
         row('Last refresh', when),
-        row('Personal keys active', `${Number(d.personalKeys || 0).toLocaleString()} other user(s) with their own key — see below to add yours`),
+        row('Your personal key', ownKeyActive ? 'Active — pricing your holdings on your own budget' : 'Not set — see below to add one'),
+        row('Personal keys active', `${Number(d.personalKeys || 0).toLocaleString()} user(s) (including you, if set above) with their own key`),
         row('Also provides', 'Company profiles, market cap, PE/EPS/beta, 52-week ranges, the searchable symbol universe'),
         row('Endpoints', '<code>/quote</code> <code>/stock/profile2</code> <code>/stock/metric</code> <code>/stock/symbol</code>'),
         row('Config', '<code>FINNHUB_KEY</code> in server/.env'),

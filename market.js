@@ -187,9 +187,15 @@
       const r = await fetch('/api/quotes');
       const data = await r.json();
       quotes = data.quotes || {};
-      const status = !data.enabled
-        ? 'Live data off — add a Finnhub key in server/.env'
-        : `Live · ${data.count} priced · ${universe.length.toLocaleString()} searchable`;
+      // `enabled` only reflects the shared server-wide key (server/.env's
+      // FINNHUB_KEY) — a user's own personal key (Connectors page) still
+      // prices real quotes into this same snapshot without it, so check
+      // personalKeys too before calling live data "off" outright.
+      const status = data.enabled
+        ? `Live · ${data.count} priced · ${universe.length.toLocaleString()} searchable`
+        : data.personalKeys > 0
+          ? `Live via ${data.personalKeys} personal key${data.personalKeys === 1 ? '' : 's'} · ${data.count} priced · ${universe.length.toLocaleString()} searchable`
+          : 'Live data off — add a Finnhub key in server/.env';
       instances.forEach((i) => { i.setStatus(status); i.refreshCells(); });
     } catch {
       instances.forEach((i) => i.setStatus('Offline'));
