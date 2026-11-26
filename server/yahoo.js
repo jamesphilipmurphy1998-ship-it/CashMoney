@@ -34,12 +34,19 @@ let lastTs = 0;
 let lastErr = '';
 let consecutiveFails = 0; // see the backoff comment in tick() below
 
+// Marks an error as "worth backing off for" (real throttling — 429/999, or a
+// network-level failure with no status at all) vs. a permanently-bad symbol
+// (404: delisted, wrong suffix mapping, no price) that will fail the exact
+// same way no matter how long the sweep waits before retrying it.
+function throttleError(message, isThrottle) {
+  return Object.assign(new Error(message), { isThrottle });
+}
 async function fetchOne(symbol) {
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`;
   const r = await fetch(url, { headers: { 'User-Agent': UA } });
-  if (!r.ok) throw new Error('yahoo ' + r.status);
+  if (!r.ok) throw throttleError('yahoo ' + r.status, r.status === 429 || r.status === 999);
   const meta = (await r.json())?.chart?.result?.[0]?.meta;
-  if (!meta || typeof meta.regularMarketPrice !== 'number') throw new Error('yahoo: no price');
+  if (!meta || typeof meta.regularMarketPrice !== 'number') throw throttleError('yahoo: no price', false);
   const prev = meta.chartPreviousClose ?? meta.previousClose ?? 0;
   return {
     price: meta.regularMarketPrice,
@@ -133,16 +140,17 @@ function start(hooks) {
     } catch (e) {
       fail++;
       lastErr = String(e.message || e);
-      consecutiveFails++;
-      // A handful of permanently-bad symbols scattered through the universe
-      // (delisted tickers, wrong suffix mappings) used to each cost a full
-      // 15s here — with enough of them, that alone stretched a ~33-minute
-      // sweep to hours, and every other symbol's "last updated" time got
-      // dragged out with it. Only treat this as real rate-limiting (and
-      // actually cool off) once failures start coming back-to-back; an
-      // isolated bad symbol just costs the normal spacing and the sweep
-      // moves on.
-      const delay = consecutiveFails >= 3 ? ERROR_BACKOFF_MS : SPACING_MS;
+      // A 404 (delisted ticker, wrong suffix mapping) will fail exactly the
+      // same way no matter how long the sweep waits before retrying it —
+      // backing off only helps for a REAL throttle signal (429/999, or a
+      // network-level error with no HTTP status at all). The "Unindexed"
+      // bucket (~22k symbols, lots of junk/delisted tickers) can have long
+      // runs of consecutive 404s; treating those like rate-limiting used to
+      // stretch a ~33-minute sweep to well over a day. Only count a symbol
+      // toward the backoff streak when it's actually throttle-shaped.
+      const isThrottle = e.isThrottle !== false; // no status at all (network error) defaults to true
+      if (isThrottle) consecutiveFails++; else consecutiveFails = 0;
+      const delay = isThrottle && consecutiveFails >= 3 ? ERROR_BACKOFF_MS : SPACING_MS;
       setTimeout(tick, delay);
     }
   };
@@ -165,8 +173,15 @@ async function fetchHistory(symbol, range = '20y', interval = '1d') {
   const close = res?.indicators?.quote?.[0]?.close || [];
   const out = [];
   for (let i = 0; i < ts.length; i++) {
-    if (typeof close[i] === 'number') out.push([ts[i] * 1000, close[i]]);
+    // Yahoo occasionally returns a spurious near-zero close (e.g. around a
+    // trading halt) — a real security price is never <= 0, so drop those
+    // rather than let a consumer plot a vertical spike down to the axis.
+    if (typeof close[i] === 'number' && close[i] > 0) out.push([ts[i] * 1000, close[i]]);
   }
+  // Stashed as a non-enumerable-ish extra property rather than changing the
+  // return shape to {points, timezone} — history.backfill() and every other
+  // existing caller just wants the plain array of [ts, close] tuples.
+  out.timezone = res?.meta?.exchangeTimezoneName || null;
   return out;
 }
 

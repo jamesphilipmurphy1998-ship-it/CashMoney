@@ -272,7 +272,8 @@ async function fetchAnalysisRaw(symbol) {
 // Pulls the plain value out of Yahoo's {raw, fmt} wrapper objects.
 function unwrap(v) {
   if (v == null) return null;
-  return typeof v === 'object' && 'raw' in v ? v.raw : v;
+  if (typeof v === 'object') return 'raw' in v ? v.raw : null; // Yahoo sends {} (no 'raw') for a field it has no data for
+  return v;
 }
 
 function parseAnalysis(r) {
@@ -359,8 +360,312 @@ function analysisDiskCount() {
   try { return fs.readdirSync(ANALYSIS_DIR).length; } catch { return 0; }
 }
 
+// ── SEC filings: every filing Yahoo has for this stock (10-K, 10-Q, 8-K,
+// etc.) — same crumb/cookie session as Financials/Analysis above, own disk
+// cache. Persisted and merged (keyed by edgarUrl, each filing's real
+// identity) rather than replaced, since filings are a permanent public
+// record — once one exists it should stay listed even if a later fetch's
+// page of results happens not to include it again.
+const SEC_FILINGS_DIR = path.join(__dirname, '..', 'data', 'sec-filings');
+try { fs.mkdirSync(SEC_FILINGS_DIR, { recursive: true }); } catch {}
+const secFilingsFileFor = (sym) => path.join(SEC_FILINGS_DIR, sym.replace(/[^A-Za-z0-9._\-^=]/g, '_') + '.json');
+function readSecFilingsDisk(sym, maxAgeMs) {
+  try {
+    const stat = fs.statSync(secFilingsFileFor(sym));
+    if (maxAgeMs != null && Date.now() - stat.mtimeMs > maxAgeMs) return null;
+    return JSON.parse(fs.readFileSync(secFilingsFileFor(sym), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function writeSecFilingsDisk(sym, data) {
+  try { fs.writeFileSync(secFilingsFileFor(sym), JSON.stringify(data)); } catch {}
+}
+
+async function fetchSecFilingsRaw(symbol) {
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=secFilings&crumb=${encodeURIComponent(crumb)}`;
+  const r = await fetch(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
+  if (r.status === 401) throw Object.assign(new Error('crumb expired'), { crumbExpired: true });
+  if (!r.ok) throw new Error('quoteSummary(secFilings) ' + r.status);
+  const body = await r.json();
+  if (body?.quoteSummary?.error) throw new Error(body.quoteSummary.error.description || 'quoteSummary error');
+  return body?.quoteSummary?.result?.[0] || {};
+}
+function parseSecFilings(r) {
+  const filings = (r.secFilings?.filings || []).map((f) => ({
+    date: f.date || null,
+    type: f.type || '',
+    title: f.title || '',
+    edgarUrl: f.edgarUrl || '',
+    exhibits: (f.exhibits || []).map((e) => ({ type: e.type || '', url: e.url || '' })),
+  }));
+  return { filings };
+}
+function mergeSecFilings(oldData, newData) {
+  if (!oldData) return newData;
+  return { filings: mergeByKey(oldData.filings, newData.filings, (x) => x.edgarUrl || x.date + '|' + x.type) };
+}
+
+const secFilingsCache = new Map();
+async function getSecFilings(symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  const hit = secFilingsCache.get(sym);
+  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
+
+  const fresh = readSecFilingsDisk(sym, CACHE_MS);
+  if (fresh) {
+    secFilingsCache.set(sym, { ts: Date.now(), data: fresh });
+    return fresh;
+  }
+
+  try {
+    if (!cookie || !crumb) await refreshCrumb();
+    let rawData;
+    try {
+      rawData = await fetchSecFilingsRaw(sym);
+    } catch (e) {
+      if (!e.crumbExpired) throw e;
+      await refreshCrumb();
+      rawData = await fetchSecFilingsRaw(sym);
+    }
+    ok++; lastTs = Date.now();
+    const parsed = parseSecFilings(rawData);
+    const merged = mergeSecFilings(readSecFilingsDisk(sym, null), parsed);
+    secFilingsCache.set(sym, { ts: Date.now(), data: merged });
+    writeSecFilingsDisk(sym, merged);
+    return merged;
+  } catch (e) {
+    fail++; lastErr = String(e.message || e);
+    if (hit) return hit.data;
+    const stale = readSecFilingsDisk(sym, null);
+    if (stale) return stale;
+    throw e;
+  }
+}
+function secFilingsDiskCount() {
+  try { return fs.readdirSync(SEC_FILINGS_DIR).length; } catch { return 0; }
+}
+
+// ── Statistics: the stock page's Statistics tab (Valuation Measures,
+// Financial Highlights, Trading Information) — same crumb/cookie session as
+// Financials/Analysis/SEC filings above, own disk cache. Every field here is
+// a live point-in-time snapshot (market cap, P/E, margins, shares
+// outstanding, etc.), not a period that ages out of a rolling window like
+// earnings history — so there's nothing to merge by key; each fetch just
+// replaces the last snapshot, same as priceTargets in mergeAnalysis above.
+const STATISTICS_DIR = path.join(__dirname, '..', 'data', 'statistics');
+try { fs.mkdirSync(STATISTICS_DIR, { recursive: true }); } catch {}
+const statisticsFileFor = (sym) => path.join(STATISTICS_DIR, sym.replace(/[^A-Za-z0-9._\-^=]/g, '_') + '.json');
+function readStatisticsDisk(sym, maxAgeMs) {
+  try {
+    const stat = fs.statSync(statisticsFileFor(sym));
+    if (maxAgeMs != null && Date.now() - stat.mtimeMs > maxAgeMs) return null;
+    return JSON.parse(fs.readFileSync(statisticsFileFor(sym), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function writeStatisticsDisk(sym, data) {
+  try { fs.writeFileSync(statisticsFileFor(sym), JSON.stringify(data)); } catch {}
+}
+
+const STATISTICS_MODULES = 'defaultKeyStatistics,summaryDetail,financialData,calendarEvents';
+async function fetchStatisticsRaw(symbol) {
+  const url = `https://query1.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${STATISTICS_MODULES}&crumb=${encodeURIComponent(crumb)}`;
+  const r = await fetch(url, { headers: { 'User-Agent': UA, Cookie: cookie } });
+  if (r.status === 401) throw Object.assign(new Error('crumb expired'), { crumbExpired: true });
+  if (!r.ok) throw new Error('quoteSummary(statistics) ' + r.status);
+  const body = await r.json();
+  if (body?.quoteSummary?.error) throw new Error(body.quoteSummary.error.description || 'quoteSummary error');
+  return body?.quoteSummary?.result?.[0] || {};
+}
+// Grouped the same way Yahoo's own Statistics tab lays them out, so the
+// stock page can render this straight into three tables without its own
+// re-shuffling logic.
+function parseStatistics(r) {
+  const ks = r.defaultKeyStatistics || {};
+  const sd = r.summaryDetail || {};
+  const fd = r.financialData || {};
+  const ce = r.calendarEvents || {};
+  const u = unwrap;
+  return {
+    // Everything the stock page's Summary tab needs (Open/Bid/Ask/Day's
+    // range/Volume/Earnings date/1y target est, etc.) — Finnhub's free tier
+    // only covers a handful of these, so the Summary tab merges this in on
+    // top of Finnhub's quote/profile rather than showing "—" for the rest.
+    quoteDetail: {
+      open: u(sd.open), bid: u(sd.bid), ask: u(sd.ask),
+      dayLow: u(sd.dayLow), dayHigh: u(sd.dayHigh),
+      volume: u(sd.volume), averageVolume10Day: u(sd.averageVolume10days),
+      earningsDate: (ce.earnings?.earningsDate || [])[0] ? u(ce.earnings.earningsDate[0]) : null,
+      oneYearTargetEst: u(fd.targetMeanPrice),
+    },
+    valuationMeasures: {
+      marketCap: u(sd.marketCap), enterpriseValue: u(ks.enterpriseValue),
+      trailingPE: u(sd.trailingPE), forwardPE: u(ks.forwardPE), pegRatio: u(ks.pegRatio),
+      priceToSales: u(ks.priceToSalesTrailing12Months), priceToBook: u(ks.priceToBook),
+      enterpriseToRevenue: u(ks.enterpriseToRevenue), enterpriseToEbitda: u(ks.enterpriseToEbitda),
+    },
+    financialHighlights: {
+      fiscalYearEnds: u(ks.lastFiscalYearEnd), mostRecentQuarter: u(ks.mostRecentQuarter),
+      profitMargins: u(ks.profitMargins), operatingMargins: u(fd.operatingMargins),
+      returnOnAssets: u(fd.returnOnAssets), returnOnEquity: u(fd.returnOnEquity),
+      totalRevenue: u(fd.totalRevenue), revenuePerShare: u(fd.revenuePerShare), revenueGrowth: u(fd.revenueGrowth),
+      grossProfits: u(fd.grossProfits), ebitda: u(fd.ebitda), netIncomeToCommon: u(ks.netIncomeToCommon),
+      dilutedEps: u(ks.trailingEps), earningsGrowth: u(fd.earningsGrowth),
+      totalCash: u(fd.totalCash), totalCashPerShare: u(fd.totalCashPerShare), totalDebt: u(fd.totalDebt),
+      debtToEquity: u(fd.debtToEquity), currentRatio: u(fd.currentRatio), bookValuePerShare: u(ks.bookValue),
+      operatingCashflow: u(fd.operatingCashflow), freeCashflow: u(fd.freeCashflow),
+    },
+    tradingInformation: {
+      beta: u(ks.beta), fiftyTwoWeekChange: u(ks['52WeekChange']), sp500FiftyTwoWeekChange: u(ks.SandP52WeekChange),
+      fiftyTwoWeekHigh: u(sd.fiftyTwoWeekHigh), fiftyTwoWeekLow: u(sd.fiftyTwoWeekLow),
+      fiftyDayAverage: u(sd.fiftyDayAverage), twoHundredDayAverage: u(sd.twoHundredDayAverage),
+      averageVolume3Month: u(sd.averageVolume), averageVolume10Day: u(sd.averageVolume10days),
+      sharesOutstanding: u(ks.sharesOutstanding), impliedSharesOutstanding: u(ks.impliedSharesOutstanding),
+      floatShares: u(ks.floatShares),
+      heldPercentInsiders: u(ks.heldPercentInsiders), heldPercentInstitutions: u(ks.heldPercentInstitutions),
+      sharesShort: u(ks.sharesShort), dateShortInterest: u(ks.dateShortInterest),
+      sharesShortPriorMonth: u(ks.sharesShortPriorMonth),
+      shortRatio: u(ks.shortRatio), shortPercentOfFloat: u(ks.shortPercentOfFloat),
+      shortPercentOfSharesOutstanding: u(ks.sharesPercentSharesOut),
+      dividendRate: u(sd.dividendRate), dividendYield: u(sd.dividendYield),
+      trailingAnnualDividendRate: u(sd.trailingAnnualDividendRate), trailingAnnualDividendYield: u(sd.trailingAnnualDividendYield),
+      fiveYearAvgDividendYield: u(ks.fiveYearAvgDividendYield),
+      dividendDate: ce.dividendDate ? u(ce.dividendDate) : null,
+      exDividendDate: u(sd.exDividendDate),
+      payoutRatio: u(sd.payoutRatio), lastSplitFactor: u(ks.lastSplitFactor), lastSplitDate: u(ks.lastSplitDate),
+    },
+  };
+}
+
+const statisticsCache = new Map();
+async function getStatistics(symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  const hit = statisticsCache.get(sym);
+  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
+
+  const fresh = readStatisticsDisk(sym, CACHE_MS);
+  if (fresh) {
+    statisticsCache.set(sym, { ts: Date.now(), data: fresh });
+    return fresh;
+  }
+
+  try {
+    if (!cookie || !crumb) await refreshCrumb();
+    let rawData;
+    try {
+      rawData = await fetchStatisticsRaw(sym);
+    } catch (e) {
+      if (!e.crumbExpired) throw e;
+      await refreshCrumb();
+      rawData = await fetchStatisticsRaw(sym);
+    }
+    ok++; lastTs = Date.now();
+    const parsed = parseStatistics(rawData);
+    statisticsCache.set(sym, { ts: Date.now(), data: parsed });
+    writeStatisticsDisk(sym, parsed);
+    return parsed;
+  } catch (e) {
+    fail++; lastErr = String(e.message || e);
+    if (hit) return hit.data;
+    const stale = readStatisticsDisk(sym, null);
+    if (stale) return stale;
+    throw e;
+  }
+}
+function statisticsDiskCount() {
+  try { return fs.readdirSync(STATISTICS_DIR).length; } catch { return 0; }
+}
+
+// ── Valuation history: the Statistics tab's "Valuation measures" table with
+// its historical quarter-end columns (Current + up to 5 past quarters),
+// matching Yahoo's own site — same fundamentals-timeseries endpoint
+// Financials already uses (fetchTable/mergeTable above are fully generic, so
+// this just reuses them with a different metric list), same crumb/cookie
+// session. The quarterly series is persisted/merged like Financials (a
+// quarter's valuation ratio is a permanent historical fact once reported);
+// "current" (today's live TTM-based snapshot) is never merged, always just
+// the latest, same as priceTargets in mergeAnalysis.
+//
+// Notably, Yahoo's own "Forward P/E" here comes from this TTM-anchored
+// "ForwardPeRatio" timeseries metric, NOT defaultKeyStatistics.forwardPE
+// (which getStatistics above uses) — the two are genuinely different
+// methodologies Yahoo itself exposes, not a staleness bug. This connector
+// matches what Yahoo's website actually displays.
+const VALUATION_METRICS = [
+  'MarketCap', 'EnterpriseValue', 'PeRatio', 'ForwardPeRatio', 'PegRatio',
+  'PsRatio', 'PbRatio', 'EnterprisesValueRevenueRatio', 'EnterprisesValueEBITDARatio',
+];
+const VALUATION_DIR = path.join(__dirname, '..', 'data', 'valuation');
+try { fs.mkdirSync(VALUATION_DIR, { recursive: true }); } catch {}
+const valuationFileFor = (sym) => path.join(VALUATION_DIR, sym.replace(/[^A-Za-z0-9._\-^=]/g, '_') + '.json');
+function readValuationDisk(sym, maxAgeMs) {
+  try {
+    const stat = fs.statSync(valuationFileFor(sym));
+    if (maxAgeMs != null && Date.now() - stat.mtimeMs > maxAgeMs) return null;
+    return JSON.parse(fs.readFileSync(valuationFileFor(sym), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+function writeValuationDisk(sym, data) {
+  try { fs.writeFileSync(valuationFileFor(sym), JSON.stringify(data)); } catch {}
+}
+
+const valuationCache = new Map();
+async function getValuationHistory(symbol) {
+  const sym = String(symbol || '').toUpperCase();
+  const hit = valuationCache.get(sym);
+  if (hit && Date.now() - hit.ts < CACHE_MS) return hit.data;
+
+  const fresh = readValuationDisk(sym, CACHE_MS);
+  if (fresh) {
+    valuationCache.set(sym, { ts: Date.now(), data: fresh });
+    return fresh;
+  }
+
+  try {
+    if (!cookie || !crumb) await refreshCrumb();
+    const fetchBoth = () => Promise.all([
+      fetchTable(sym, VALUATION_METRICS, 'quarterly'),
+      fetchTable(sym, VALUATION_METRICS, 'trailing'),
+    ]);
+    let quarterly, trailing;
+    try {
+      [quarterly, trailing] = await fetchBoth();
+    } catch (e) {
+      if (!e.crumbExpired) throw e;
+      await refreshCrumb();
+      [quarterly, trailing] = await fetchBoth();
+    }
+    ok++; lastTs = Date.now();
+    // "Current" is just the most recent point of the TTM-anchored trailing
+    // series for each metric — a live snapshot, not historical, so it's
+    // never merged (same idea as priceTargets in mergeAnalysis above).
+    const current = {};
+    for (const row of trailing?.rows || []) current[row.key] = row.values[row.values.length - 1] ?? null;
+    const merged = { current, history: mergeTable(readValuationDisk(sym, null)?.history, quarterly) };
+    valuationCache.set(sym, { ts: Date.now(), data: merged });
+    writeValuationDisk(sym, merged);
+    return merged;
+  } catch (e) {
+    fail++; lastErr = String(e.message || e);
+    if (hit) return hit.data;
+    const stale = readValuationDisk(sym, null);
+    if (stale) return stale;
+    throw e;
+  }
+}
+function valuationDiskCount() {
+  try { return fs.readdirSync(VALUATION_DIR).length; } catch { return 0; }
+}
+
 module.exports = {
   getFinancials,
   getAnalysis,
-  status: () => ({ ok, fail, lastErr, lastTs, cached: cache.size, diskCached: diskCount(), analysisCached: analysisDiskCount(), hasCrumb: !!crumb }),
+  getSecFilings,
+  getStatistics,
+  getValuationHistory,
+  status: () => ({ ok, fail, lastErr, lastTs, cached: cache.size, diskCached: diskCount(), analysisCached: analysisDiskCount(), secFilingsCached: secFilingsDiskCount(), statisticsCached: statisticsDiskCount(), valuationCached: valuationDiskCount(), hasCrumb: !!crumb }),
 };

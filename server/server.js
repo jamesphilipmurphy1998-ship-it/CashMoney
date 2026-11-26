@@ -11,6 +11,8 @@ const universe = require('./universe');
 const history = require('./history');
 const sharesies = require('./sharesies');
 const yahooFinancials = require('./yahoo-financials');
+const financialsSweep = require('./financials-sweep');
+const yahooNews = require('./yahoo-news');
 
 const ROOT = path.join(__dirname, '..');
 const PORT = process.env.PORT || 4178;
@@ -119,7 +121,7 @@ async function handleApi(req, res, url) {
       if (!members.has(s)) continue; // skip non-index / illiquid junk
       const d = snap[s].day;
       // Guard against bad prevClose data producing absurd % moves.
-      if (typeof d === 'number' && d !== 0 && Math.abs(d) < 60) items.push({ s, d, price: snap[s].price });
+      if (typeof d === 'number' && d !== 0 && Math.abs(d) < 60) items.push({ s, d, price: snap[s].price, open: snap[s].open || 0 });
     }
     items.sort((a, b) => b.d - a.d);
     return send(res, 200, { gainers: items.slice(0, 20), losers: items.slice(-20).reverse() });
@@ -180,7 +182,7 @@ async function handleApi(req, res, url) {
       const missing = list.filter((s) => !quotes.one(s));
       if (missing.length) await Promise.all(missing.map((s) => yahoo.fetchNow(s).catch(() => {})));
     }
-    return send(res, 200, { enabled: quotes.enabled(), count: quotes.count(), key: quotes.key(), hot: quotes.hotList(), personalKeys: quotes.personalKeyCount(), yahoo: yahoo.status(), yahooFinancials: yahooFinancials.status(), quotes: quotes.snapshot(list) });
+    return send(res, 200, { enabled: quotes.enabled(), count: quotes.count(), key: quotes.key(), hot: quotes.hotList(), personalKeys: quotes.personalKeyCount(), yahoo: yahoo.status(), yahooFinancials: yahooFinancials.status(), financialsSweep: financialsSweep.status(), quotes: quotes.snapshot(list) });
   }
   // GET /api/history/AAPL  -> recorded price points [[ts,price],...] for charts.
   // First time a symbol is asked for, backfill its daily history from Yahoo
@@ -208,7 +210,7 @@ async function handleApi(req, res, url) {
     const symbol = decodeURIComponent(url.slice('/api/intraday/'.length).split('?')[0]).toUpperCase();
     try {
       const points = await yahoo.fetchHistory(symbol, '1d', '1m');
-      return send(res, 200, { symbol, points });
+      return send(res, 200, { symbol, points, timezone: points.timezone || null });
     } catch (e) {
       return send(res, 502, { symbol, error: String(e.message || e) });
     }
@@ -248,6 +250,93 @@ async function handleApi(req, res, url) {
     try {
       const analysis = await yahooFinancials.getAnalysis(symbol);
       return send(res, 200, { symbol, analysis });
+    } catch (e) {
+      return send(res, 502, { symbol, error: String(e.message || e) });
+    }
+  }
+  // GET /api/news/AAPL -> top 8 news stories for the stock page's News tab.
+  // Own connector (see server/yahoo-news.js), deliberately un-cached and
+  // un-merged unlike Financials/Analysis above — a fresh pull from Yahoo
+  // every time this tab is opened, one set of stories replacing the last.
+  if (url.startsWith('/api/news/') && req.method === 'GET') {
+    const symbol = decodeURIComponent(url.slice('/api/news/'.length).split('?')[0]).toUpperCase();
+    try {
+      const news = await yahooNews.getNews(symbol);
+      return send(res, 200, { symbol, news });
+    } catch (e) {
+      return send(res, 502, { symbol, error: String(e.message || e) });
+    }
+  }
+  // GET /api/pressreleases/AAPL -> top 4 press releases for the stock page's
+  // News > Press releases sub-tab. Same connector/endpoint as /api/news
+  // above (see server/yahoo-news.js), just filtered to wire-service
+  // publishers — same un-cached, un-merged, 1-in-1-out behaviour as News.
+  if (url.startsWith('/api/pressreleases/') && req.method === 'GET') {
+    const symbol = decodeURIComponent(url.slice('/api/pressreleases/'.length).split('?')[0]).toUpperCase();
+    try {
+      const news = await yahooNews.getPressReleases(symbol);
+      return send(res, 200, { symbol, news });
+    } catch (e) {
+      return send(res, 502, { symbol, error: String(e.message || e) });
+    }
+  }
+  // GET /api/secfilings/AAPL -> every SEC filing Yahoo has for the stock
+  // page's News > SEC filings sub-tab. Same connector as /api/financials/
+  // /api/analysis above (see server/yahoo-financials.js) — persisted and
+  // merged, not a fresh 1-in-1-out feed like /api/news.
+  if (url.startsWith('/api/secfilings/') && req.method === 'GET') {
+    const symbol = decodeURIComponent(url.slice('/api/secfilings/'.length).split('?')[0]).toUpperCase();
+    try {
+      const secFilings = await yahooFinancials.getSecFilings(symbol);
+      return send(res, 200, { symbol, secFilings });
+    } catch (e) {
+      return send(res, 502, { symbol, error: String(e.message || e) });
+    }
+  }
+  // GET /api/statistics/AAPL -> Valuation Measures, Financial Highlights,
+  // Trading Information for the stock page's Statistics tab. Same connector
+  // as /api/financials//api/analysis/api/secfilings above (see
+  // server/yahoo-financials.js) — cached for a day, refreshed on demand.
+  if (url.startsWith('/api/statistics/') && req.method === 'GET') {
+    const symbol = decodeURIComponent(url.slice('/api/statistics/'.length).split('?')[0]).toUpperCase();
+    try {
+      const statistics = await yahooFinancials.getStatistics(symbol);
+      return send(res, 200, { symbol, statistics });
+    } catch (e) {
+      return send(res, 502, { symbol, error: String(e.message || e) });
+    }
+  }
+  // GET /api/earnings-calendar?symbols=AAPL,MSFT,... -> [{symbol, earningsDate}]
+  // for the Earnings Calendar page. Reuses getStatistics's normal 24h cache
+  // per symbol (same connector as everything else here) rather than a
+  // separate fetch path — a symbol the fortnightly sweep or another tab has
+  // already warmed just returns instantly from cache; anything genuinely
+  // uncached still gets fetched here, same as opening that stock's own
+  // Statistics tab would. Errors on individual symbols are swallowed (not
+  // every symbol necessarily has data) rather than failing the whole batch.
+  if (url.startsWith('/api/earnings-calendar') && req.method === 'GET') {
+    const q = new URL(url, 'http://x').searchParams.get('symbols');
+    const list = q ? q.split(',').map((s) => s.trim().toUpperCase()).filter(Boolean) : [];
+    const results = await Promise.all(list.map(async (symbol) => {
+      try {
+        const statistics = await yahooFinancials.getStatistics(symbol);
+        return { symbol, earningsDate: statistics?.quoteDetail?.earningsDate ?? null };
+      } catch {
+        return { symbol, earningsDate: null };
+      }
+    }));
+    return send(res, 200, { earnings: results.filter((r) => r.earningsDate != null) });
+  }
+  // GET /api/valuation/AAPL -> historical Valuation measures (Current + past
+  // quarters) for the Statistics tab. Same connector as /api/financials/
+  // /api/analysis/etc above (see server/yahoo-financials.js) — the quarterly
+  // history is persisted/merged like Financials; "current" is always just
+  // the latest live snapshot.
+  if (url.startsWith('/api/valuation/') && req.method === 'GET') {
+    const symbol = decodeURIComponent(url.slice('/api/valuation/'.length).split('?')[0]).toUpperCase();
+    try {
+      const valuation = await yahooFinancials.getValuationHistory(symbol);
+      return send(res, 200, { symbol, valuation });
     } catch (e) {
       return send(res, 502, { symbol, error: String(e.message || e) });
     }
@@ -362,6 +451,7 @@ server.listen(PORT, async () => {
   await universe.ensureFresh();
   quotes.start(); // Finnhub: hot set only (holdings, ticker strip, favourites)
   yahoo.start({ set: quotes.setExternal }); // everything, including the hot set — see setExternal
+  financialsSweep.start(); // fortnightly background refresh of Financials/Analysis for every symbol, not just opened ones
 
   // Keep-warm loop: FX pairs and index/commodity symbols are few and move
   // slowly, but users expect them always priced (search list, home page). The
