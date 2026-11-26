@@ -16,21 +16,26 @@
   const INDEX_TAGS = ['S&P 500', 'Nasdaq 100', 'Dow 30'];
   const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+  // Symbols the user owns or has starred — drawn gold on the calendar.
+  let mineSymbols = new Set();
+
   async function gatherSymbols() {
     const set = new Set();
+    const mine = new Set();
     if (window.Market) {
       for (const x of Market.all()) {
         if (x.tags && x.tags.some((t) => INDEX_TAGS.includes(t))) set.add(x.s);
       }
     }
-    if (window.Favourites) for (const s of Favourites.list()) set.add(s);
+    if (window.Favourites) for (const s of Favourites.list()) { set.add(s); mine.add(String(s).toUpperCase()); }
     // Independently loaded rather than reusing app.js's own aggregate-view
     // cache — this page can be opened before that view ever has been, and
     // holdings are what actually make this "your" earnings calendar.
     try {
       const all = await Store.loadAll();
-      for (const p of all.positions || []) if (p.ticker) set.add(String(p.ticker).toUpperCase());
+      for (const p of all.positions || []) if (p.ticker) { const t = String(p.ticker).toUpperCase(); set.add(t); mine.add(t); }
     } catch {}
+    mineSymbols = mine;
     return [...set];
   }
 
@@ -117,9 +122,11 @@
       const events = byDay.get(key) || [];
       const isToday = today.y === viewYear && today.m === viewMonth && today.d === day;
       const isHighlight = key === highlightKey;
-      const chips = events
+      // Gold (owned/starred) first so they never fall under "+N more".
+      const sorted = [...events].sort((a, b) => mineSymbols.has(b.symbol.toUpperCase()) - mineSymbols.has(a.symbol.toUpperCase()));
+      const chips = sorted
         .slice(0, 4)
-        .map((e) => `<button class="ec-chip" data-sym="${esc(e.symbol)}" title="${esc(e.name)}">${esc(e.symbol)}</button>`)
+        .map((e) => `<button class="ec-chip${mineSymbols.has(e.symbol.toUpperCase()) ? ' ec-chip-mine' : ''}" data-sym="${esc(e.symbol)}" title="${esc(e.name)}">${esc(e.symbol)}</button>`)
         .join('');
       const overflow = events.length > 4 ? `<span class="ec-chip-more">+${events.length - 4} more</span>` : '';
       cells.push(

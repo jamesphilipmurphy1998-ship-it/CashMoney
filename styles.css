@@ -736,6 +736,8 @@ body.home-open .topbar { border-bottom-color: var(--border); }
 .ec-cell-events { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ec-chip { font: inherit; font-size: 11px; font-weight: 600; text-align: left; background: #0078d4; color: #fff; border: none; border-left: 3px solid #004c8c; border-radius: 3px; padding: 2px 6px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ec-chip:hover { background: #106ebe; }
+.ec-chip-mine { background: #e0a800; color: #2b2100; border-left-color: #9a7400; }
+.ec-chip-mine:hover { background: #f0b800; }
 .ec-chip-more { font-size: 10px; color: #0078d4; font-weight: 600; padding: 0 4px; }
 @media (max-width: 720px) {
   .ec-cell { min-height: 64px; }
