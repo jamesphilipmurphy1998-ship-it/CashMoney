@@ -924,12 +924,15 @@ $('#position-form').addEventListener('submit', (e) => {
   render();
 });
 
-// Row clicks: edit on row, delete on the × button.
+// A single click on a row opens that stock's own page (Summary tab) — the
+// same as clicking it anywhere else in the app (Search, ticker strip, etc).
+// Editing shares/cost is now a double-click or right-click on the row
+// instead, so it doesn't fight with just wanting to look up the stock.
 $('#holdings-body').addEventListener('click', (e) => {
-  if (isAgg()) return; // read-only aggregate: no edit/delete
-  if (e.target.closest('.drag-handle')) return; // a drag, not an edit click
+  if (e.target.closest('.drag-handle')) return; // a drag, not a click-through
   const delId = e.target.getAttribute('data-del');
   if (delId) {
+    if (isAgg()) return; // read-only aggregate: no delete
     const p = state.positions.find((x) => x.id === delId);
     const label = p ? esc(p.ticker) : 'this holding';
     if (!confirm(`Remove ${label} from this portfolio? This can't be undone.`)) return;
@@ -940,8 +943,21 @@ $('#holdings-body').addEventListener('click', (e) => {
   const row = e.target.closest('tr[data-id]');
   if (row) {
     const p = state.positions.find((x) => x.id === row.dataset.id);
-    if (p) openPosition(p);
+    if (p && !isCash(p) && window.StockPage) StockPage.show(p.ticker);
   }
+});
+function editRowAt(e) {
+  if (isAgg()) return; // read-only aggregate: no edit
+  if (e.target.closest('.drag-handle') || e.target.getAttribute('data-del')) return;
+  const row = e.target.closest('tr[data-id]');
+  if (!row) return;
+  const p = state.positions.find((x) => x.id === row.dataset.id);
+  if (p) openPosition(p);
+}
+$('#holdings-body').addEventListener('dblclick', editRowAt);
+$('#holdings-body').addEventListener('contextmenu', (e) => {
+  if (e.target.closest('tr[data-id]')) e.preventDefault();
+  editRowAt(e);
 });
 
 // Drag-to-reorder: grab the handle, drop on another row to move the dragged
@@ -1134,29 +1150,14 @@ function showToast(text, { spinner = false, done = false } = {}) {
     }, 1800);
   }
 }
-// Manual Refresh button: also re-syncs from Sharesies first if this
-// portfolio is linked (see refreshSharesiesLink) — a deliberate, occasional
-// action, unlike the frequent price-only auto-poll below.
-async function refreshLivePrices() {
-  showToast('Refreshing…', { spinner: true });
-  try {
-    await refreshSharesiesLink();
-    await refreshPricesOnly();
-    if (isAgg()) recordSummarySnapshot();
-    showToast('Refreshed', { done: true });
-  } catch (e) {
-    showToast('Refresh failed', { done: true });
-  }
-}
-$('#refresh-btn').addEventListener('click', refreshLivePrices);
 // Holdings auto-refresh: requesting the symbols also keeps them in the
 // Finnhub hot set server-side, so they're always freshly priced. Polling
 // every 15s (rather than the old 60s) so the "Stock prices last refreshed"
 // note tracks Finnhub's actual ~15-20s per-symbol cadence instead of lagging
 // behind it — this only re-reads the server's cache, it doesn't consume any
 // extra Finnhub budget (see /api/quotes in server.js). Deliberately does NOT
-// call refreshSharesiesLink — that's a heavier sync reserved for the manual
-// Refresh button, not something to run on every 15s tick.
+// call refreshSharesiesLink — that's a heavier sync, only worth doing when
+// a portfolio is actually opened/imported, not on every 15s tick.
 setInterval(() => {
   if (ready && state.positions.length) refreshPricesOnly();
 }, 15000);
