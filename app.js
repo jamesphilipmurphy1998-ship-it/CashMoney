@@ -3041,16 +3041,19 @@ function renderSharesiesDetail(d) {
     });
   } else {
     box.innerHTML = `<form id="sharesies-login-form" class="conn-form">
-      <label>Email<input id="sharesies-email" type="email" autocomplete="off" required /></label>
-      <label>Password<input id="sharesies-password" type="password" autocomplete="off" required /></label>
+      <label>Email<input id="sharesies-email" name="username" type="email" autocomplete="username" required /></label>
+      <label>Password<input id="sharesies-password" name="password" type="password" autocomplete="current-password" required /></label>
       <button type="submit" class="btn btn-dark">Connect</button>
       <p class="login-err" id="sharesies-err" hidden></p>
-      <p class="muted">Nothing is stored — you'll enter this again after a server restart.</p>
+      <p class="muted">Your email is remembered on this device. Your password isn't stored by this app — let your browser or phone's password manager save it (accept its "Save password" prompt) and it will fill it in next time. You'll still enter a 2FA code each login.</p>
     </form>`;
+    // Prefill the remembered email (not the password — that's the browser's job).
+    try { $('#sharesies-email').value = localStorage.getItem('cashmoney.sharesiesEmail') || ''; } catch {}
     $('#sharesies-login-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = $('#sharesies-email').value.trim();
       const password = $('#sharesies-password').value;
+      try { localStorage.setItem('cashmoney.sharesiesEmail', email); } catch {}
       const errEl = $('#sharesies-err');
       errEl.hidden = true;
       try {

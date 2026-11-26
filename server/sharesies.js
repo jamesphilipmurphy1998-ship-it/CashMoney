@@ -121,7 +121,13 @@ async function login(uid, email, password) {
     pendings.delete(uid);
     return { status: 'connected' };
   }
-  // No token yet: assume a 2FA challenge and hold the partial login.
+  // A wrong email/password is NOT an HTTP error here — Sharesies answers 200
+  // with { authenticated: false, type: 'identity_anonymous' }. Treating any
+  // token-less reply as a 2FA challenge made a bad password surface later as
+  // "Incorrect code", so only a real challenge is accepted as one.
+  if (body.type !== 'identity_mfa_required') {
+    throw new Error('Incorrect email or password');
+  }
   pendings.set(uid, { cookie, email, password });
   return { status: 'mfa_required' };
 }
@@ -142,6 +148,7 @@ async function completeTwoFactor(uid, code) {
   const cookie = cookieHeaderFrom(r.headers.getSetCookie?.() || r.headers.get('set-cookie')) || pending.cookie;
   const body = await r.json().catch(() => ({}));
   if (!r.ok || !body.distill_token) {
+    if (body?.type === 'identity_anonymous') throw new Error('Incorrect email or password — go back and re-enter them');
     throw new Error(body?.error || 'Incorrect code');
   }
   setSession(uid, sessionFrom(cookie, body));
