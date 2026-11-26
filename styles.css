@@ -663,12 +663,40 @@ body.home-open .topbar { border-bottom-color: var(--border); }
 @media (max-width: 720px) { .hm-movers { grid-template-columns: 1fr; } }
 .hm-mover-col { background: var(--surface); border: 0.5px solid var(--border); border-radius: 12px; padding: 8px; }
 .hm-mover-title { font-size: 13px; font-weight: 600; margin: 6px 10px 8px; }
-.hm-mover { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-radius: 8px; padding: 9px 10px; cursor: pointer; }
+/* Fixed widths for open/price/chg (not auto) — each .hm-mover row is its own
+   independent grid, so an "auto" column's width is only as wide as THAT
+   row's own text (e.g. "$568" vs "$1"), which shifted the fixed-width chart
+   column right after it left/right per row. Fixed widths make every row's
+   columns line up at the same x position regardless of content length. */
+.hm-mover { display: grid; grid-template-columns: 1fr 80px 60px 140px; align-items: center; gap: 12px; width: 100%; text-align: left; font: inherit; background: none; border: none; border-bottom: 1px dashed var(--border); border-radius: 8px; padding: 9px 10px; cursor: pointer; }
+.hm-mover:last-child { border-bottom: none; }
 .hm-mover:hover { background: var(--surface-2); }
-.hm-mover-sym { font-size: 13px; font-weight: 600; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.hm-mover-sym { font-size: 13px; font-weight: 600; color: var(--text); display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .hm-mover-name { font-size: 11px; font-weight: 400; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.hm-mover-price { font-size: 13px; font-variant-numeric: tabular-nums; color: var(--muted); }
-.hm-mover-chg { font-size: 13px; font-variant-numeric: tabular-nums; min-width: 62px; text-align: right; }
+/* Open price only — sits between the name and the mini chart (see
+   moverRow in home.js). Its $ change used to be duplicated here too, but
+   that's now shown combined with % in .hm-mover-current instead. */
+.hm-mover-open { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+/* --faint is too low-contrast against the card background for real UI text
+   (dark theme: #76756e on #232320) — --muted reads clearly in both themes. */
+.hm-mover-open-label { font-size: 10px; color: var(--muted); }
+.hm-mover-open-price { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--text); }
+/* Filled in async by renderMoverSparks in home.js, a beat after the row
+   itself renders (its own /api/intraday fetch per symbol) — sized empty
+   until then so rows don't jump once the chart arrives. */
+/* margin-left pulls this toward the name column specifically, without
+   affecting the gap between the other columns (grid's own gap: 12px stays
+   uniform everywhere else). */
+.hm-mover-spark { width: 80px; height: 32px; flex: none; margin-left: -40px; }
+.hm-spark-svg { width: 100%; height: 100%; display: block; }
+/* Current price stacked above its $ + % change (one line, "+$1.23 (+4.56%)")
+   instead of two separate side-by-side columns. */
+.hm-mover-current { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+/* color: var(--text) explicit — .hm-mover (a <button>) never set its own
+   color, so this fell back to the browser default button text color
+   (black) instead of the theme's white, unreadable on the dark card. */
+.hm-mover-price { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text); }
+.hm-mover-chg { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hm-none { padding: 12px 10px; }
 
 /* Earnings Calendar page (earnings-calendar.js) — an Outlook-style month
@@ -861,6 +889,41 @@ body.home-open .topbar { border-bottom-color: var(--border); }
 .sp-k { color: var(--muted); }
 .sp-v { font-weight: 600; text-align: right; }
 .sp-overview h3 { margin: 0 0 8px; font-size: 15px; }
+
+/* Home page "Your holdings — news" — one hero story (big image, top of the
+   merged-and-sorted feed) beside a scrollable sidebar of the rest, same
+   news-item styling as the stock page's News tab. See loadHoldingsNews in
+   home.js. */
+/* min-width: 0 on both — a grid item's default min-width:auto sizes it to
+   its content's intrinsic width, and a large photo's natural size (e.g.
+   1280px wide) can be bigger than that. Without overriding it, the hero's
+   2fr column balloons out to fit the image's full natural width *before*
+   max-width: 100% on .hm-news-hero-img gets a chance to constrain it —
+   blowing out the whole grid instead of being capped inside its column. */
+.hm-news { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; align-items: start; min-width: 0; }
+.hm-news-hero { display: block; text-decoration: none; color: inherit; min-width: 0; }
+/* No fixed aspect-ratio box — the source thumbnail can be a small square
+   publisher logo just as often as a landscape photo (Yahoo's search API
+   doesn't distinguish the two), and forcing either shape into a fixed 16:9
+   container either crops a square logo or letterboxes it inside a lot of
+   empty space. Capping width/height instead lets the image size itself from
+   its own natural ratio — as large as the allocated hero column allows,
+   whatever shape that turns out to be. When there's no image at all (see
+   newsHeroCard in home.js), no placeholder box is rendered at all. */
+.hm-news-hero-img { display: block; max-width: 100%; max-height: 680px; width: auto; height: auto; border-radius: 12px; }
+.hm-news-hero:hover .hm-news-hero-title { color: var(--accent); }
+.hm-news-hero-title { font-size: 22px; font-weight: 700; line-height: 1.3; margin: 14px 0 6px; }
+.hm-news-hero-meta { font-size: 13px; color: var(--muted); margin: 0; }
+.hm-news-hero-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.hm-news-side { max-height: 480px; overflow-y: auto; }
+.hm-news-side .news-item { padding: 12px 0; }
+.hm-news-side .news-item:first-child { padding-top: 0; }
+.hm-news-side .news-thumb { width: 84px; height: 64px; }
+.hm-news-side .news-title { font-size: 13px; }
+@media (max-width: 860px) {
+  .hm-news { grid-template-columns: 1fr; }
+  .hm-news-side { max-height: none; }
+}
 
 /* Notes */
 .notes { display: flex; flex-direction: column; gap: 10px; }

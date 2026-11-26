@@ -265,15 +265,17 @@
 
     <!-- Market home page. Hidden until opened from Home / the logo. -->
     <section id="home-page" hidden>
+      <!-- News for the stocks you actually hold (every portfolio, deduped) —
+           same Yahoo search connector as the stock page's News tab (see
+           server/yahoo-news.js), just fetched per-holding and merged newest
+           first. Hero + sidebar layout, one square block. Hidden entirely if
+           there are no real (non-cash) holdings yet — see loadHoldingsNews
+           in home.js. -->
+      <div class="hm-section hm-news-section" id="hm-news-section" hidden>
+        <h2 class="hm-h">Your holdings — news</h2>
+        <div class="hm-news" id="hm-news"><p class="muted">Loading…</p></div>
+      </div>
       <h1 class="page-title">Markets today</h1>
-      <div class="hm-section">
-        <h2 class="hm-h">Indices</h2>
-        <div class="hm-grid" id="hm-indices"></div>
-      </div>
-      <div class="hm-section">
-        <h2 class="hm-h">Currencies</h2>
-        <div class="hm-grid" id="hm-currencies"></div>
-      </div>
       <div class="hm-section">
         <h2 class="hm-h">Biggest movers</h2>
         <div class="hm-movers">
