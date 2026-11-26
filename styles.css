@@ -800,11 +800,19 @@ body.home-open .topbar { border-bottom-color: var(--border); }
    whole column (and the page) wider instead of shrinking to its track and
    letting the table's own overflow-x:auto scroll internally. */
 .sp-main { min-width: 0; }
-@media (max-width: 860px) { .sp-layout { grid-template-columns: 1fr; } .sp-nav { flex-direction: row; flex-wrap: wrap; } }
 .sp-nav { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 20px; }
 .sp-nav-item { font: inherit; font-size: 14px; text-align: left; color: var(--text); background: none; border: none; border-radius: var(--radius); padding: 8px 12px; cursor: pointer; }
 .sp-nav-item.active { background: var(--surface-2); font-weight: 600; color: var(--accent); }
 .sp-nav-item:disabled { color: var(--faint); cursor: default; }
+/* Phones/narrow windows: the tab list becomes one swipeable row above the page
+   (declared after the base .sp-nav rules so it actually wins — it used to sit
+   above them and be overridden, leaving a sticky column floating over the chart). */
+@media (max-width: 860px) {
+  .sp-layout { grid-template-columns: 1fr; gap: 14px; }
+  .sp-nav { flex-direction: row; flex-wrap: nowrap; position: static; gap: 4px; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; padding-bottom: 2px; }
+  .sp-nav::-webkit-scrollbar { display: none; }
+  .sp-nav-item { flex: none; white-space: nowrap; padding: 8px 14px; }
+}
 .sp-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .sp-head-info { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .sp-logo { width: 56px; height: 56px; border-radius: 14px; background: #fff; padding: 8px; object-fit: contain; box-shadow: 0 1px 4px rgba(0,0,0,0.18); flex: none; }
