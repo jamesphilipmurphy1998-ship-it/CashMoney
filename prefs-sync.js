@@ -16,7 +16,7 @@
     'cashmoney.tabColors', 'cashmoney.rowColors', 'cashmoney.portfolioOrder',
     'cashmoney.holdingsOrder', 'cashmoney.coverageOrder', 'cashmoney.linkedPids',
     'cashmoney.displayCcy', 'cashmoney.displayCcyByPf', 'cashmoney.researchList',
-    'cashmoney.customRevenue',
+    'cashmoney.customRevenue', 'cashmoney.gainMode',
   ];
   const watched = new Set(KEYS);
   let applying = false; // true while writing the account's values locally — those must not echo back up
@@ -31,11 +31,23 @@
     }
     return out;
   };
+  // Keys removed locally since the last upload — they must also leave the
+  // account's copy, or the next pull would bring them straight back.
+  const removed = new Set();
   const push = () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
+    timer = setTimeout(async () => {
       if (!signedIn) return;
-      Store.savePrefs(snapshot()).catch((e) => console.warn('Preferences not saved to account:', e.message || e));
+      try {
+        // Merge into the account's current copy rather than overwriting it, so
+        // two devices changing different settings can't wipe each other's.
+        const merged = { ...(await Store.getPrefs()), ...snapshot() };
+        for (const k of removed) if (localStorage.getItem(k) === null) delete merged[k];
+        removed.clear();
+        await Store.savePrefs(merged);
+      } catch (e) {
+        console.warn('Preferences not saved to account:', e.message || e);
+      }
     }, 1500);
   };
 
@@ -47,45 +59,73 @@
   };
   Storage.prototype.removeItem = function (k) {
     rawRemove.call(this, k);
-    if (this === localStorage && !applying && watched.has(k)) push();
+    if (this === localStorage && !applying && watched.has(k)) { removed.add(k); push(); }
   };
 
-  // On sign-in: the account's values win; anything only this browser has is
-  // kept and uploaded. If adopting the account's values changed something the
-  // page already read at load (theme, chart format...), reload once so the
-  // whole UI starts from them.
+  // Per-item maps (colours, currency choices). The first time a device ever
+  // syncs, its own entries are combined with the account's rather than being
+  // thrown away, so the laptop's colours and the phone's colours both survive.
+  const MAP_KEYS = ['cashmoney.tabColors', 'cashmoney.rowColors', 'cashmoney.displayCcyByPf', 'cashmoney.customRevenue'];
+  const MERGED_FLAG = 'cashmoney.prefsMerged'; // not synced: marks "this device has joined the account's copy"
+
+  // Pull the account's copy. The account's values win; anything only this
+  // browser has is kept and uploaded. If that changed something the page
+  // already read at load (theme, colours...), reload so the whole UI uses it —
+  // at most once a minute, so two devices can never ping-pong.
   async function pull() {
     let remote;
     try { remote = await Store.getPrefs(); } catch (e) { console.warn('Preferences not loaded from account:', e.message || e); return; }
     signedIn = true;
     let changed = false;
+    let needsUpload = false;
     applying = true;
     try {
+      const firstTime = localStorage.getItem(MERGED_FLAG) === null;
       for (const k of KEYS) {
-        if (typeof remote[k] === 'string' && localStorage.getItem(k) !== remote[k]) {
-          rawSet.call(localStorage, k, remote[k]);
+        let want = remote[k];
+        if (firstTime && MAP_KEYS.includes(k) && typeof want === 'string' && localStorage.getItem(k) !== null) {
+          try {
+            const union = { ...JSON.parse(localStorage.getItem(k)), ...JSON.parse(want) };
+            const text = JSON.stringify(union);
+            if (text !== want) needsUpload = true;
+            want = text;
+          } catch {}
+        }
+        if (typeof want === 'string' && localStorage.getItem(k) !== want) {
+          rawSet.call(localStorage, k, want);
           changed = true;
         }
       }
+      rawSet.call(localStorage, MERGED_FLAG, '1');
     } finally { applying = false; }
-    const localOnly = KEYS.some((k) => remote[k] === undefined && localStorage.getItem(k) !== null);
-    if (localOnly) push();
-    let reloaded = false;
-    try { reloaded = sessionStorage.getItem('cashmoney.prefsReloaded') === '1'; } catch {}
-    if (changed && !reloaded) {
-      try { sessionStorage.setItem('cashmoney.prefsReloaded', '1'); } catch {}
+    if (needsUpload || KEYS.some((k) => remote[k] === undefined && localStorage.getItem(k) !== null)) push();
+    let last = 0;
+    try { last = Number(sessionStorage.getItem('cashmoney.prefsReloadedAt')) || 0; } catch {}
+    if (changed && Date.now() - last > 60000) {
+      try { sessionStorage.setItem('cashmoney.prefsReloadedAt', String(Date.now())); } catch {}
       location.reload();
     }
   }
 
+  // Called from index.html once window.sb (the Supabase client) exists — this
+  // file loads before that, so it can't subscribe to auth at load time.
   let started = false;
-  Store.onAuth((session) => {
-    if (session && session.user) {
-      if (!started) { started = true; pull(); }
-    } else {
-      signedIn = false;
-      started = false;
-      try { sessionStorage.removeItem('cashmoney.prefsReloaded'); } catch {}
-    }
-  });
+  window.PrefsSync = {
+    start() {
+      let lastPull = Date.now();
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState !== 'visible' || !signedIn || Date.now() - lastPull < 30000) return;
+        lastPull = Date.now();
+        pull();
+      });
+      Store.onAuth((session) => {
+        if (session && session.user) {
+          if (!started) { started = true; pull(); }
+        } else {
+          signedIn = false;
+          started = false;
+        }
+      });
+    },
+  };
 })();

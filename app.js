@@ -604,6 +604,65 @@ function displayCode(code) {
   return { symbol: s };
 }
 
+// "Total gain" can be flipped to an annualised average (click the card's
+// label). Only this one number changes — the charts are untouched. Positions
+// carry no purchase dates, so the start date is the best available proxy: the
+// first Sharesies history point for a Sharesies-linked portfolio, otherwise
+// when the portfolio was created here. Cost is treated as invested on that
+// date, so for a portfolio built up gradually this is an approximation.
+const GAIN_MODE_KEY = 'cashmoney.gainMode'; // 'total' | 'annualised' — synced to the account like other display prefs
+const getGainMode = () => (localStorage.getItem(GAIN_MODE_KEY) === 'annualised' ? 'annualised' : 'total');
+
+function gainStartMs() {
+  const startOf = (p) => {
+    const first = (p.sharesies_history || [])
+      .map((h) => new Date(h.date || h.d || h[0]).getTime())
+      .filter((t) => Number.isFinite(t))
+      .sort((a, b) => a - b)[0];
+    const created = p.created_at ? new Date(p.created_at).getTime() : NaN;
+    return Number.isFinite(first) ? first : created;
+  };
+  const list = isAgg()
+    ? portfolios.filter((p) => getLinkedSet().has(p.id))
+    : portfolios.filter((p) => p.id === activePid);
+  const starts = list.map(startOf).filter((t) => Number.isFinite(t));
+  return starts.length ? Math.min(...starts) : null;
+}
+
+function annualisedGain(t) {
+  const start = gainStartMs();
+  if (!start || !(t.cost > 0)) return null;
+  const days = (Date.now() - start) / 864e5;
+  if (days < 30) return { tooShort: true, since: start };
+  const years = days / 365.25;
+  return {
+    since: start,
+    perYear: t.totalGain / years,
+    pct: (Math.pow(t.value / t.cost, 1 / years) - 1) * 100,
+  };
+}
+
+function gainCard(t) {
+  if (getGainMode() === 'annualised') {
+    const a = annualisedGain(t);
+    const since = a && new Date(a.since).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+    if (!a) return { label: 'Annualised avg gain', toggle: true, value: '—', cls: '' };
+    if (a.tooShort) return { label: 'Annualised avg gain', toggle: true, value: `<span class="sub">Needs 30+ days since ${esc(since)}</span>`, cls: '' };
+    return {
+      label: 'Annualised avg gain',
+      toggle: true,
+      value: `${a.perYear >= 0 ? '+' : '−'}${money(Math.abs(a.perYear))}<span class="sub">/yr · ${pct(a.pct)} p.a. since ${esc(since)}</span>`,
+      cls: signClass(a.perYear),
+    };
+  }
+  return {
+    label: 'Total gain',
+    toggle: true,
+    value: `${t.totalGain >= 0 ? '+' : '−'}${money(Math.abs(t.totalGain))} <span class="sub">${pct(t.totalPct)}</span>`,
+    cls: signClass(t.totalGain),
+  };
+}
+
 function renderMetrics() {
   const t = totals();
   const dp = displayParts(t.value);
@@ -618,16 +677,12 @@ function renderMetrics() {
       value: `${t.dayMove >= 0 ? '+' : '−'}${money(Math.abs(t.dayMove))} <span class="sub">${pct(t.dayPct)}</span>`,
       cls: signClass(t.dayMove),
     },
-    {
-      label: 'Total gain',
-      value: `${t.totalGain >= 0 ? '+' : '−'}${money(Math.abs(t.totalGain))} <span class="sub">${pct(t.totalPct)}</span>`,
-      cls: signClass(t.totalGain),
-    },
+    gainCard(t),
   ];
   $('#metrics').innerHTML = cards
     .map(
       (c) => `<div class="metric">
-        <p class="label">${c.label}</p>
+        <p class="label">${c.toggle ? `<button type="button" class="gain-toggle" data-gain-toggle title="Switch between total gain and annualised average gain">${c.label} <span class="ccy-caret">⇄</span></button>` : c.label}</p>
         <p class="value ${c.cls}">${c.value}</p>
       </div>`
     )
@@ -1806,7 +1861,6 @@ const ConnectorsPage = {
   },
 };
 window.ConnectorsPage = ConnectorsPage;
-$('#rail-connectors').addEventListener('click', () => ConnectorsPage.show());
 $('#finnhub-key-save').addEventListener('click', async () => {
   const input = $('#finnhub-key-input');
   const key = input.value.trim();
@@ -3415,6 +3469,58 @@ pfTabs.addEventListener('dragend', () => {
 // allocation chart slices (see PALETTE at the top of this file).
 const tabColorMenu = $('#tab-color-menu');
 let colorMenuPid = null;
+let colorMenuRowKey = null; // set instead of colorMenuPid when the menu was opened on a holdings row
+// The colour menu's contents: a colour-wheel swatch on the left (opens a bigger
+// wheel to pick any colour), then the fixed palette, then "no colour".
+function colorMenuHtml(current) {
+  const custom = current && !PALETTE.includes(current);
+  return `<button type="button" class="tab-color-swatch tab-color-wheel${custom ? ' active' : ''}" data-wheel-toggle title="Pick any colour" aria-label="Pick any colour"></button>` +
+    PALETTE.map((c) => `<button class="tab-color-swatch${c === current ? ' active' : ''}" style="background:${c}" data-color="${c}" aria-label="${c}"></button>`).join('') +
+    `<button class="tab-color-swatch tab-color-none${!current ? ' active' : ''}" data-color="" title="No colour" aria-label="No colour">×</button>` +
+    `<div class="color-wheel-pop" id="color-wheel-pop" hidden><canvas id="color-wheel" width="180" height="180" aria-label="Colour wheel"></canvas></div>`;
+}
+
+// Paint a hue/saturation wheel (full brightness) once per open.
+function drawColorWheel(canvas) {
+  const ctx = canvas.getContext('2d');
+  const size = canvas.width, r = size / 2;
+  const img = ctx.createImageData(size, size);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = x + 0.5 - r, dy = y + 0.5 - r;
+      const dist = Math.hypot(dx, dy);
+      const i = (y * size + x) * 4;
+      if (dist > r) { img.data[i + 3] = 0; continue; }
+      const [R, G, B] = hsvToRgb(((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360, dist / r, 1);
+      img.data[i] = R; img.data[i + 1] = G; img.data[i + 2] = B;
+      img.data[i + 3] = dist > r - 1 ? 180 : 255; // soft edge
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
+function hsvToRgb(h, s, v) {
+  const c = v * s, x = c * (1 - Math.abs(((h / 60) % 2) - 1)), m = v - c;
+  const [r, g, b] = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
+  return [r, g, b].map((n) => Math.round((n + m) * 255));
+}
+const rgbToHex = (rgb) => '#' + rgb.map((n) => n.toString(16).padStart(2, '0')).join('');
+
+// Apply whichever colour was chosen (palette swatch, "none", or a wheel pick)
+// to whatever the menu was opened on — a portfolio tab or a holdings row.
+function applyMenuColor(color) {
+  if (colorMenuRowKey) {
+    setRowColor(colorMenuRowKey, color || null);
+    colorMenuRowKey = null;
+    tabColorMenu.hidden = true;
+    renderHoldings();
+    return;
+  }
+  if (!colorMenuPid) return;
+  setTabColor(colorMenuPid, color || null);
+  tabColorMenu.hidden = true;
+  renderPortfolioTabs();
+}
+
 pfTabs.addEventListener('contextmenu', (e) => {
   const tab = e.target.closest('.pf-tab[data-pid]');
   if (!tab) return;
@@ -3422,28 +3528,30 @@ pfTabs.addEventListener('contextmenu', (e) => {
   colorMenuRowKey = null;
   colorMenuPid = tab.dataset.pid;
   const current = getTabColors()[colorMenuPid];
-  tabColorMenu.innerHTML =
-    PALETTE.map((c) => `<button class="tab-color-swatch${c === current ? ' active' : ''}" style="background:${c}" data-color="${c}" aria-label="${c}"></button>`).join('') +
-    `<button class="tab-color-swatch tab-color-none${!current ? ' active' : ''}" data-color="" title="No colour" aria-label="No colour">×</button>`;
+  tabColorMenu.innerHTML = colorMenuHtml(current);
   tabColorMenu.style.left = e.clientX + 'px';
   tabColorMenu.style.top = e.clientY + 'px';
   tabColorMenu.hidden = false;
 });
-let colorMenuRowKey = null; // set instead of colorMenuPid when the menu was opened on a holdings row
 tabColorMenu.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-color]');
-  if (!btn) return;
-  if (colorMenuRowKey) {
-    setRowColor(colorMenuRowKey, btn.dataset.color || null);
-    colorMenuRowKey = null;
-    tabColorMenu.hidden = true;
-    renderHoldings();
+  if (e.target.closest('[data-wheel-toggle]')) {
+    const pop = $('#color-wheel-pop');
+    pop.hidden = !pop.hidden;
+    if (!pop.hidden) drawColorWheel($('#color-wheel'));
     return;
   }
-  if (!colorMenuPid) return;
-  setTabColor(colorMenuPid, btn.dataset.color || null);
-  tabColorMenu.hidden = true;
-  renderPortfolioTabs();
+  const wheel = e.target.closest('#color-wheel');
+  if (wheel) {
+    const rect = wheel.getBoundingClientRect();
+    const dx = e.clientX - rect.left - rect.width / 2, dy = e.clientY - rect.top - rect.height / 2;
+    const radius = rect.width / 2, dist = Math.hypot(dx, dy);
+    if (dist > radius) return;
+    const hue = ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
+    applyMenuColor(rgbToHex(hsvToRgb(hue, dist / radius, 1)));
+    return;
+  }
+  const btn = e.target.closest('[data-color]');
+  if (btn) applyMenuColor(btn.dataset.color || null);
 });
 // Right-click a holdings row to colour it (same palette and menu as the tabs).
 $('#holdings-body').addEventListener('contextmenu', (e) => {
@@ -3454,9 +3562,7 @@ $('#holdings-body').addEventListener('contextmenu', (e) => {
   colorMenuRowKey = rowColorKey(p);
   colorMenuPid = null;
   const current = getRowColors()[colorMenuRowKey];
-  tabColorMenu.innerHTML =
-    PALETTE.map((c) => `<button class="tab-color-swatch${c === current ? ' active' : ''}" style="background:${c}" data-color="${c}" aria-label="${c}"></button>`).join('') +
-    `<button class="tab-color-swatch tab-color-none${!current ? ' active' : ''}" data-color="" title="No colour" aria-label="No colour">×</button>`;
+  tabColorMenu.innerHTML = colorMenuHtml(current);
   tabColorMenu.style.left = e.clientX + 'px';
   tabColorMenu.style.top = e.clientY + 'px';
   tabColorMenu.hidden = false;
@@ -3698,6 +3804,11 @@ window.App = App;
   if (!metrics) return;
   // The metrics HTML is re-rendered often, so use delegation.
   metrics.addEventListener('click', (e) => {
+    if (e.target.closest('[data-gain-toggle]')) {
+      localStorage.setItem(GAIN_MODE_KEY, getGainMode() === 'total' ? 'annualised' : 'total');
+      renderMetrics();
+      return;
+    }
     const trigger = e.target.closest('[data-ccy-trigger]');
     if (trigger) {
       e.stopPropagation();

@@ -1250,3 +1250,21 @@ body.notifications-open .pf-title.active { color: var(--text); }
 /* Holdings rows coloured via right-click — this table only */
 .holdings tbody tr[data-tint] td { background: color-mix(in srgb, var(--row-tint) 22%, transparent); }
 .holdings tbody tr[data-tint]:hover td { background: color-mix(in srgb, var(--row-tint) 34%, transparent); }
+
+.gain-toggle { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.gain-toggle:hover { color: var(--text); text-decoration: underline; }
+.metric .value .sub { white-space: normal; }
+
+/* Colour-wheel swatch + the bigger wheel it opens */
+.tab-color-wheel { background: conic-gradient(#f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00); }
+.tab-color-menu { flex-wrap: nowrap; }
+.color-wheel-pop { position: absolute; left: 0; top: calc(100% + 8px); background: var(--surface); border: 0.5px solid var(--border-strong); border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); padding: 10px; }
+.color-wheel-pop canvas { display: block; width: 180px; height: 180px; cursor: crosshair; border-radius: 50%; }
+
+/* Long-press on a holdings row / portfolio tab opens the colour menu, so stop
+   the phone selecting text (and showing its copy handles) at the same time. */
+.holdings tbody tr, .pf-tab {
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
