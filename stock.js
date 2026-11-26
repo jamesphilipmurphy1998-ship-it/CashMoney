@@ -369,6 +369,7 @@
     if (plot) {
       plot.addEventListener('mousemove', onHover);
       plot.addEventListener('mouseleave', hideHover);
+      window.bindTouchScrub?.(plot, onHover, hideHover); // finger drag on phones
     }
   })();
 

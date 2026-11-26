@@ -460,9 +460,25 @@ const fmtSharesiesDate = (ts) => new Date(ts).toLocaleDateString(undefined, { da
 // renderBox(best) returns the hover tooltip's innerHTML — lets callers with
 // different point shapes (single value vs. value+contributed) each supply
 // their own tooltip layout while sharing the crosshair/positioning logic.
+// Finger-drag scrubbing for the line charts: a mouse hover only exists on a
+// desktop, so on a phone a drag over the chart drives the same crosshair /
+// tooltip handler continuously. touch-action: pan-y keeps vertical swipes
+// scrolling the page; sideways drags come to us. Lifting the finger hides it,
+// like the mouse leaving.
+function bindTouchScrub(el, onMove, onEnd) {
+  if (!el) return;
+  el.style.touchAction = 'pan-y';
+  const move = (e) => { const t = e.touches[0]; if (t) onMove({ clientX: t.clientX, clientY: t.clientY }); };
+  el.addEventListener('touchstart', move, { passive: true });
+  el.addEventListener('touchmove', move, { passive: true });
+  el.addEventListener('touchend', onEnd, { passive: true });
+  el.addEventListener('touchcancel', onEnd, { passive: true });
+}
+window.bindTouchScrub = bindTouchScrub;
+
 function bindValueChartHover(plotSel, getHoverPts, renderBox) {
   const plot = $(plotSel);
-  plot.addEventListener('mousemove', (e) => {
+  const onMove = (e) => {
     const pts = getHoverPts();
     const cross = plot.querySelector('.sp-cross');
     const dot = plot.querySelector('.sp-dot');
@@ -480,10 +496,13 @@ function bindValueChartHover(plotSel, getHoverPts, renderBox) {
     box.style.left = left + '%';
     box.style.transform = best.xf < 0.12 ? 'translateX(0)' : best.xf > 0.88 ? 'translateX(-100%)' : 'translateX(-50%)';
     box.hidden = false;
-  });
-  plot.addEventListener('mouseleave', () => {
+  };
+  const onLeave = () => {
     plot.querySelectorAll('.sp-cross, .sp-dot, .sp-hoverbox').forEach((el) => { el.hidden = true; });
-  });
+  };
+  plot.addEventListener('mousemove', onMove);
+  plot.addEventListener('mouseleave', onLeave);
+  bindTouchScrub(plot, onMove, onLeave);
 }
 bindValueChartHover('#sharesies-chart-plot', () => sharesiesHoverPts, (best) => {
   const dateLabel = (sharesiesRange === '1D' || sharesiesRange === '5D') ? fmtChartDateTime(best.ts) : fmtSharesiesDate(best.ts);
@@ -2386,7 +2405,7 @@ function renderBullChart() {
 // a single dot at their midpoint.
 (() => {
   const plot = $('#bull-chart-svgwrap');
-  plot.addEventListener('mousemove', (e) => {
+  const onMove = (e) => {
     const pts = bullChartHoverPts;
     const cross = plot.querySelector('.sp-cross');
     const dotHigh = plot.querySelector('.bull-dot-high');
@@ -2408,10 +2427,13 @@ function renderBullChart() {
     box.style.left = left + '%';
     box.style.transform = best.xf < 0.12 ? 'translateX(0)' : best.xf > 0.88 ? 'translateX(-100%)' : 'translateX(-50%)';
     box.hidden = false;
-  });
-  plot.addEventListener('mouseleave', () => {
+  };
+  const onLeave = () => {
     plot.querySelectorAll('.sp-cross, .sp-dot, .sp-hoverbox').forEach((el) => { el.hidden = true; });
-  });
+  };
+  plot.addEventListener('mousemove', onMove);
+  plot.addEventListener('mouseleave', onLeave);
+  bindTouchScrub(plot, onMove, onLeave);
 })();
 // Patches only the computed cells' text after an edit — the inputs
 // themselves are left completely untouched, so focus/caret never moves.
