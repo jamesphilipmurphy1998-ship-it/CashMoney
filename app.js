@@ -1601,7 +1601,6 @@ $('#home-btn').addEventListener('click', openHome);
 
 // Left rail.
 $('#rail-home').addEventListener('click', openHome);
-$('#rail-profile').addEventListener('click', () => ProfilePage.show());
 let lastCoverageData = null; // last /api/quotes payload, so dragging a coverage row can re-render instantly without a network round trip
 const ConnectorsPage = {
   show() {
