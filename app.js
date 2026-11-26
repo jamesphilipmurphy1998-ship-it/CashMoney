@@ -70,6 +70,62 @@ let activePid = null; // id of the portfolio currently being viewed
 const AGG = '__agg__'; // sentinel: the aggregated, read-only summary of every portfolio
 const isAgg = () => activePid === AGG;
 
+// ---- Browser back/forward -----------------------------------------------
+// The app never touched history before this — every "page" (Home, a stock's
+// detail page, Connectors, Profile, Research, Earnings Calendar, Compound
+// Calculator, a portfolio tab) is just a JS-toggled overlay, so Back/Forward
+// had nothing real to navigate through. Nav.push records one state object
+// per view; a single popstate listener (applyView, below) replays whichever
+// one the browser lands on. Every page module's own show() calls Nav.push
+// at the top of its own function — one call site per page, not scattered
+// across every place that happens to open it.
+let restoringView = false; // true while applyView is replaying a popstate — Nav.push no-ops so it can't re-push a duplicate entry
+const Nav = {
+  // Guards against pushing the exact same view twice in a row (e.g. clicking
+  // the same stock's row twice), which would otherwise bloat history with
+  // entries Back has to click through without anything visibly changing.
+  push(view) {
+    if (restoringView) return;
+    const cur = history.state;
+    if (cur && view && cur.type === view.type && cur.sym === view.sym && cur.pid === view.pid) return;
+    history.pushState(view, '');
+  },
+};
+window.Nav = Nav;
+
+function applyView(view) {
+  restoringView = true;
+  try {
+    if (!view || view.type === 'portfolio') {
+      if (window.StockPage) StockPage.close();
+      if (window.ConnectorsPage) ConnectorsPage.close();
+      if (window.ProfilePage) ProfilePage.close();
+      if (window.ResearchPage) ResearchPage.close();
+      if (window.EarningsCalendarPage) EarningsCalendarPage.close();
+      if (window.CompoundPage) CompoundPage.close();
+      if (window.HomePage) HomePage.close();
+      selectPortfolio((view && view.pid) || AGG, { closeOverlays: false });
+    } else if (view.type === 'home' && window.HomePage) {
+      HomePage.show();
+    } else if (view.type === 'stock' && window.StockPage) {
+      StockPage.show(view.sym, view.opts || {});
+    } else if (view.type === 'connectors' && window.ConnectorsPage) {
+      ConnectorsPage.show();
+    } else if (view.type === 'profile' && window.ProfilePage) {
+      ProfilePage.show();
+    } else if (view.type === 'research' && window.ResearchPage) {
+      ResearchPage.show();
+    } else if (view.type === 'earnings' && window.EarningsCalendarPage) {
+      EarningsCalendarPage.show();
+    } else if (view.type === 'compound' && window.CompoundPage) {
+      CompoundPage.show();
+    }
+  } finally {
+    restoringView = false;
+  }
+}
+window.addEventListener('popstate', (e) => applyView(e.state));
+
 // When each portfolio's stock prices were last actually pulled live (not
 // just re-rendered) — distinct from the generic "Updated" timestamp in the
 // topbar, which fires on every render (position edits, note edits, etc.),
@@ -1295,6 +1351,7 @@ async function selectPortfolio(pid) {
   if (window.CompoundPage) CompoundPage.close();
   activePid = pid;
   localStorage.setItem('cashmoney.activePid', pid);
+  Nav.push({ type: 'portfolio', pid });
   const agg = pid === AGG;
   renderPortfolioTabs();
   setAggregateMode(agg);
@@ -1432,6 +1489,12 @@ const goHome = () => {
 };
 $('#summary-btn').addEventListener('click', goHome);
 
+// Permanent back button beside the tabs — history.back() (not a direct
+// close()/selectPortfolio call) so it always goes to whatever view was
+// actually last shown, same mechanism as the stock page's own "← Back"
+// (see Nav/applyView above and the popstate listener that drives them both).
+$('#pf-back-btn').addEventListener('click', () => history.back());
+
 // The logo and the rail "Home" button open the market Home page (no portfolio).
 const openHome = () => { if (window.HomePage) HomePage.show(); };
 $('#home-btn').addEventListener('click', openHome);
@@ -1442,6 +1505,7 @@ $('#rail-profile').addEventListener('click', () => ProfilePage.show());
 let lastCoverageData = null; // last /api/quotes payload, so dragging a coverage row can re-render instantly without a network round trip
 const ConnectorsPage = {
   show() {
+    Nav.push({ type: 'connectors' });
     if (window.StockPage) StockPage.close(); // one page at a time
     if (window.HomePage) HomePage.close();
     if (window.ResearchPage) ResearchPage.close();
@@ -1749,6 +1813,7 @@ document.addEventListener('click', (e) => {
 // already uses for the aggregate summary, but keeps only the notes here.
 const ResearchPage = {
   async show() {
+    Nav.push({ type: 'research' });
     if (window.StockPage) StockPage.close();
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.HomePage) HomePage.close();
@@ -2371,6 +2436,7 @@ const fmtCalcMonths = (m) => {
 };
 const CompoundPage = {
   show() {
+    Nav.push({ type: 'compound' });
     if (window.StockPage) StockPage.close();
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.HomePage) HomePage.close();
@@ -2440,6 +2506,7 @@ $('#research-notes').addEventListener('click', async (e) => {
 // this page just surfaces that identity.
 const ProfilePage = {
   show() {
+    Nav.push({ type: 'profile' });
     if (window.StockPage) StockPage.close();
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.HomePage) HomePage.close();

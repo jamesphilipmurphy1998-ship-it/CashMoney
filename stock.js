@@ -89,6 +89,7 @@
   // strip. They can't be held or favourited, so those controls are hidden and
   // the header shows the index name with its symbol beneath.
   async function show(sym, opts = {}) {
+    if (window.Nav) Nav.push({ type: 'stock', sym, opts });
     current = sym;
     // Indices/FX/commodities (^GSPC, NZDUSD=X, GC=F, DX-Y.NYB) aren't holdings,
     // whether opened from the ticker strip or found via search.
@@ -342,7 +343,9 @@
     },
   };
 
-  $('#sp-back').addEventListener('click', close);
+  // history.back() (not a direct close()) so the browser's own Back button
+  // and this in-page button stay in sync — see Nav/applyView in app.js.
+  $('#sp-back').addEventListener('click', () => history.back());
 
   // Section nav: only Summary, Research & Projections, Financials, and
   // Analysis actually do anything yet (the rest are disabled placeholders).

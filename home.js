@@ -80,6 +80,7 @@
 
   let timer = null;
   function show() {
+    if (window.Nav) Nav.push({ type: 'home' });
     if (window.StockPage) StockPage.close();
     if (window.ConnectorsPage) ConnectorsPage.close();
     if (window.ProfilePage) ProfilePage.close();

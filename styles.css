@@ -214,6 +214,16 @@ button.brand-mark:hover { background: var(--surface-2); }
    (unchanged) box width — it just visually extends into that free space.
    max-width is a safety net: with enough portfolios to need more than that,
    it wraps rather than running under the Refresh/Add position buttons. */
+/* Wraps the permanent back button + the tabs themselves so the button sits
+   right beside the leftmost tab, sharing the same bottom alignment (both
+   sit just above .topbar's accent border-bottom the tabs rest on). */
+.pf-tabs-row { display: flex; align-items: flex-end; gap: 6px; }
+/* align-self: flex-start (row default is flex-end, matching the tabs'
+   bottom edge) — this button is shorter than a tab, so bottom-aligned it
+   sat a few px lower at the top than the tabs. Top-aligning instead lines
+   its top up with theirs without changing its own width/height at all. */
+.pf-back-btn { flex: none; align-self: flex-start; display: flex; align-items: center; justify-content: center; width: 28px; height: 28px; font-size: 16px; line-height: 1; color: var(--muted); background: var(--surface-2); border: 0.5px solid var(--border); border-bottom: none; border-radius: 9px 9px 0 0; cursor: pointer; }
+.pf-back-btn:hover { color: var(--text); background: var(--surface); }
 .pf-tabs { display: flex; align-items: flex-end; gap: 4px; flex-wrap: wrap; width: max-content; max-width: 640px; }
 .pf-tab { display: inline-flex; align-items: center; gap: 6px; max-width: 180px; font-size: 13px; font-weight: 500; color: var(--muted); background: var(--surface-2); border: 0.5px solid var(--border); border-bottom: none; border-radius: 9px 9px 0 0; padding: 6px 10px; margin-bottom: 0; cursor: pointer; }
 .pf-tab:hover { color: var(--text); }
@@ -418,19 +428,19 @@ body.compound-open .app > :not(.topbar):not(#compound-page) { display: none !imp
 body.earnings-calendar-open .app > :not(.topbar):not(#earnings-calendar-page) { display: none !important; }
 /* None of these overlay pages are "a portfolio tab" — flatten the topbar's
    accent underline (same reasoning as body.home-open above) so it doesn't
-   read as if a tab is still selected while viewing Connectors/Profile/Research/Compound. */
-body.connectors-open .topbar, body.profile-open .topbar, body.research-open .topbar, body.compound-open .topbar { border-bottom-color: var(--border); }
+   read as if a tab is still selected while viewing Connectors/Profile/Research/Compound/Earnings Calendar. */
+body.connectors-open .topbar, body.profile-open .topbar, body.research-open .topbar, body.compound-open .topbar, body.earnings-calendar-open .topbar { border-bottom-color: var(--border); }
 /* The active tab/title's blue highlight is also still whatever it was
    before you navigated away — opening an overlay page doesn't re-render the
    tabs, it just shows/hides pages, so the highlight itself needs resetting
    here too, not just the topbar's underline above. */
 body.connectors-open .pf-tab.active, body.profile-open .pf-tab.active, body.research-open .pf-tab.active,
-body.compound-open .pf-tab.active, body.home-open .pf-tab.active, body.stock-open .pf-tab.active {
+body.compound-open .pf-tab.active, body.home-open .pf-tab.active, body.stock-open .pf-tab.active, body.earnings-calendar-open .pf-tab.active {
   color: var(--muted); font-weight: 500; background: var(--surface-2);
   border: 0.5px solid var(--border); border-bottom: none; margin-bottom: 0; z-index: auto;
 }
 body.connectors-open .pf-title.active, body.profile-open .pf-title.active, body.research-open .pf-title.active,
-body.compound-open .pf-title.active, body.home-open .pf-title.active, body.stock-open .pf-title.active {
+body.compound-open .pf-title.active, body.home-open .pf-title.active, body.stock-open .pf-title.active, body.earnings-calendar-open .pf-title.active {
   color: var(--text);
 }
 .research-notes .note { cursor: pointer; }
