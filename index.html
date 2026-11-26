@@ -789,6 +789,10 @@
   <script src="stock.js"></script>
   <script src="home.js"></script>
   <script src="earnings-calendar.js"></script>
+  <script>
+    // See sw.js: a network-only worker whose job is making the site installable.
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  </script>
   <script type="module">
     import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
     const c = window.SUPABASE_CONFIG;
