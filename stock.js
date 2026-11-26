@@ -168,6 +168,7 @@
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
     document.body.classList.add('stock-open');
     page.hidden = false;
     window.scrollTo(0, 0);

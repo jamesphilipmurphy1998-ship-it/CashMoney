@@ -104,6 +104,7 @@ function applyView(view) {
       if (window.EarningsCalendarPage) EarningsCalendarPage.close();
       if (window.CompoundPage) CompoundPage.close();
       if (window.SettingsPage) SettingsPage.close();
+      if (window.NotificationsPage) NotificationsPage.close();
       if (window.HomePage) HomePage.close();
       selectPortfolio((view && view.pid) || AGG, { closeOverlays: false });
     } else if (view.type === 'home' && window.HomePage) {
@@ -122,6 +123,8 @@ function applyView(view) {
       CompoundPage.show();
     } else if (view.type === 'settings' && window.SettingsPage) {
       SettingsPage.show();
+    } else if (view.type === 'notifications' && window.NotificationsPage) {
+      NotificationsPage.show();
     }
   } finally {
     restoringView = false;
@@ -1458,6 +1461,7 @@ async function selectPortfolio(pid, { closeOverlays = true } = {}) {
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
   }
   activePid = pid;
   localStorage.setItem('cashmoney.activePid', pid);
@@ -1596,6 +1600,7 @@ const goHome = () => {
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
   }
 };
 $('#summary-btn').addEventListener('click', goHome);
@@ -1622,6 +1627,7 @@ const ConnectorsPage = {
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
     document.body.classList.add('connectors-open');
     $('#connectors-page').hidden = false;
     window.scrollTo(0, 0);
@@ -1931,6 +1937,7 @@ const ResearchPage = {
     if (window.ProfilePage) ProfilePage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
     document.body.classList.add('research-open');
     $('#research-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2626,6 +2633,7 @@ const ProfilePage = {
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.SettingsPage) SettingsPage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
     document.body.classList.add('profile-open');
     $('#profile-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2677,6 +2685,7 @@ const SettingsPage = {
     if (window.EarningsCalendarPage) EarningsCalendarPage.close();
     if (window.CompoundPage) CompoundPage.close();
     if (window.ProfilePage) ProfilePage.close();
+    if (window.NotificationsPage) NotificationsPage.close();
     document.body.classList.add('settings-open');
     $('#settings-page').hidden = false;
     window.scrollTo(0, 0);
@@ -2693,6 +2702,103 @@ const SettingsPage = {
   },
 };
 window.SettingsPage = SettingsPage;
+
+// Notifications page: shell for now — an empty state until alerts exist.
+// Each notification would render as a .notif-item inside #notifications-list.
+const NotificationsPage = {
+  show() {
+    Nav.push({ type: 'notifications' });
+    if (window.StockPage) StockPage.close();
+    if (window.ConnectorsPage) ConnectorsPage.close();
+    if (window.HomePage) HomePage.close();
+    if (window.ResearchPage) ResearchPage.close();
+    if (window.EarningsCalendarPage) EarningsCalendarPage.close();
+    if (window.CompoundPage) CompoundPage.close();
+    if (window.ProfilePage) ProfilePage.close();
+    if (window.SettingsPage) SettingsPage.close();
+    document.body.classList.add('notifications-open');
+    $('#notifications-page').hidden = false;
+    window.scrollTo(0, 0);
+    this.refresh();
+  },
+  close() {
+    document.body.classList.remove('notifications-open');
+    $('#notifications-page').hidden = true;
+  },
+  // Notification #1: an owned or starred company reports earnings within the
+  // next 7 days. Rebuilt from the same sources as the Earnings Calendar
+  // (holdings + favourites -> /api/earnings-calendar), so it never goes stale.
+  async refresh() {
+    try {
+      const mine = new Map(); // SYM -> 'owned' | 'starred' (owned wins)
+      if (window.Favourites) for (const f of Favourites.list()) mine.set(String(f).toUpperCase(), 'starred');
+      try {
+        const all = await Store.loadAll();
+        for (const p of all.positions || []) if (p.ticker && cashLabel(p.ticker) == null) mine.set(String(p.ticker).toUpperCase(), 'owned');
+      } catch {}
+      let events = [];
+      if (mine.size) {
+        const syms = [...mine.keys()];
+        for (let i = 0; i < syms.length; i += 150) {
+          const r = await fetch('/api/earnings-calendar?symbols=' + encodeURIComponent(syms.slice(i, i + 150).join(',')));
+          events = events.concat((await r.json()).earnings || []);
+        }
+      }
+      // Whole UTC days, matching the calendar (Yahoo gives epoch seconds).
+      const dayNum = (ms) => Math.floor(ms / 864e5);
+      const today = dayNum(Date.now());
+      this.items = events
+        .map((e) => ({ symbol: e.symbol, days: dayNum(e.earningsDate * 1000) - today, date: new Date(e.earningsDate * 1000), kind: mine.get(String(e.symbol).toUpperCase()) }))
+        .filter((e) => e.kind && e.days >= 0 && e.days <= 7)
+        .sort((a, b) => a.days - b.days || (a.kind === 'owned' ? -1 : 1));
+    } catch (e) {
+      console.warn('Notifications refresh failed:', e);
+      return;
+    }
+    this.render();
+  },
+  items: [],
+  render() {
+    const badge = $('#rail-notifications');
+    badge.classList.toggle('has-notif', this.items.length > 0);
+    badge.dataset.count = this.items.length > 9 ? '9+' : String(this.items.length || '');
+    const list = $('#notifications-list');
+    if (!this.items.length) {
+      list.className = 'card notif-empty';
+      list.querySelector('.notif-items')?.remove();
+      list.querySelector('.notif-empty-body').hidden = false;
+      return;
+    }
+    list.className = 'notif-list';
+    list.querySelector('.notif-empty-body').hidden = true;
+    list.querySelector('.notif-items')?.remove();
+    const when = (d) => (d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`);
+    const wrap = document.createElement('div');
+    wrap.className = 'notif-items';
+    wrap.innerHTML = this.items
+      .map((n) => {
+        const meta = window.Market && Market.get(n.symbol);
+        const name = (meta && meta.n) || '';
+        const day = n.date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' });
+        return `<button type="button" class="card notif-item" data-sym="${esc(n.symbol)}">
+          <span class="notif-dot"></span>
+          <span class="notif-body"><b>${esc(n.symbol)}</b>${name ? ' · ' + esc(name) : ''} reports earnings ${when(n.days)}
+            <span class="muted">${day} · ${n.kind === 'owned' ? 'You own this' : 'Starred'}</span></span>
+          <span class="set-chev" aria-hidden="true">›</span>
+        </button>`;
+      })
+      .join('');
+    list.appendChild(wrap);
+  },
+};
+window.NotificationsPage = NotificationsPage;
+$('#notifications-list').addEventListener('click', (e) => {
+  const b = e.target.closest('.notif-item[data-sym]');
+  if (b && window.StockPage) StockPage.show(b.dataset.sym, { tab: 'financials' });
+});
+setInterval(() => { if (typeof currentUser !== 'undefined' && currentUser) NotificationsPage.refresh(); }, 30 * 60 * 1000);
+$('#rail-notifications').addEventListener('click', () => NotificationsPage.show());
+$('#notifications-settings-link').addEventListener('click', () => SettingsPage.show());
 
 $('#settings-page').addEventListener('click', (e) => {
   const toggle = e.target.closest('.set-switch');
@@ -3241,6 +3347,7 @@ pfTabs.addEventListener('click', async (e) => {
       if (window.EarningsCalendarPage) EarningsCalendarPage.close();
       if (window.CompoundPage) CompoundPage.close();
       if (window.SettingsPage) SettingsPage.close();
+      if (window.NotificationsPage) NotificationsPage.close();
     }
   }
 });
@@ -3540,7 +3647,7 @@ const App = {
   boot() {
     // Fires immediately with the current session, and again on sign in/out.
     Store.onAuth((session) => {
-      if (session && session.user) showApp(session.user);
+      if (session && session.user) { showApp(session.user); NotificationsPage.refresh(); }
       else showLogin();
     });
   },
