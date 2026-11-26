@@ -55,8 +55,8 @@ const MIME = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
 };
 
-function send(res, status, body, type = 'application/json') {
-  res.writeHead(status, { 'Content-Type': type });
+function send(res, status, body, type = 'application/json', headers = {}) {
+  res.writeHead(status, { 'Content-Type': type, ...headers });
   res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
@@ -433,7 +433,7 @@ function serveStatic(req, res, url) {
 
   fs.readFile(filePath, (err, buf) => {
     if (err) return send(res, 404, 'Not found', 'text/plain');
-    send(res, 200, buf, MIME[path.extname(filePath)] || 'application/octet-stream');
+    send(res, 200, buf, MIME[path.extname(filePath)] || 'application/octet-stream', { 'Cache-Control': 'no-cache' });
   });
 }
 
